@@ -1,60 +1,60 @@
-# Solgift — криптоподарки в одной ссылке
+# Solgift — crypto gifts in one link
 
-> Создавай красивые цифровые открытки с SOL или USDC и отправляй подарок близким по ссылке.
+> Create a digital greeting card with SOL or USDC and send it to someone you care about with a single link.
 
-**Статус:** интерфейс MVP. Для создания и получения реальных ваучеров нужен escrow backend: он не входит в этот репозиторий. Без `VITE_VOUCHER_API_URL` приложение не отправляет funding-транзакцию.
+**Status:** MVP frontend. Real voucher creation and claiming require an escrow backend, which is not included in this repository. Without `VITE_VOUCHER_API_URL`, the frontend will not submit a funding transaction.
 
-[Контракт escrow API](./BACKEND_API.md) · [GitHub-репозиторий](https://github.com/janbakutov0812-afk/solana-gift-vouchers)
+[Escrow API contract](./BACKEND_API.md) · [GitHub repository](https://github.com/janbakutov0812-afk/solana-gift-vouchers)
 
 ---
 
-## Проблема и решение
+## Problem and solution
 
-Отправить криптовалюту человеку, который редко пользуется Web3, часто означает объяснять адреса, кошельки и порядок действий. Solgift превращает перевод в знакомый сценарий подарка: открытка, личное сообщение и ссылка для получателя.
+Sending cryptocurrency to someone who is new to Web3 can mean explaining wallet addresses, wallets, and transaction steps. Solgift turns a transfer into a familiar gift experience: a designed greeting card, a personal message, and a link for the recipient.
 
-Отправитель выбирает оформление, SOL или USDC и сумму. Получатель открывает ссылку, подключает кошелёк и забирает подарок. Выплата должна проходить через отдельный escrow backend, который проверяет funding и не допускает повторного claim.
+The sender chooses a design, SOL or USDC, and an amount. The recipient opens the link, connects a wallet, and claims the gift. A separate escrow backend must handle funding verification and prevent a voucher from being claimed more than once.
 
-## Почему Solana
+## Why Solana
 
-- В приложении можно отправить SOL или USDC в сети Solana.
-- Кошелёк подключается через Solana Wallet Adapter, а транзакции подтверждаются через RPC.
-- Ваучер задуман как ссылка: получателю не нужно заранее сообщать отправителю адрес своего кошелька.
+- The app supports gifts denominated in SOL or USDC on Solana.
+- Wallet connections use Solana Wallet Adapter, and transactions are confirmed through RPC.
+- The gift is designed to be shared as a link, so the sender does not need to collect the recipient's wallet address in advance.
 
-## Возможности интерфейса
+## MVP features
 
-- Подключение Phantom и отображение SOL-баланса.
-- Выбор SOL или USDC, суммы, сообщения и одного из четырёх дизайнов открытки.
-- Предпросмотр подарка и экран получателя.
-- Подготовка funding-транзакции через API, подпись в кошельке и проверка подтверждения в сети.
-- Получение ваучера по ID из ссылки и запрос выплаты через API.
+- Phantom wallet connection and SOL balance display.
+- SOL or USDC selection, amount entry, a personal message, and four greeting card designs.
+- Gift preview and recipient screen.
+- Funding transaction preparation through the API, wallet signing, and on-chain confirmation.
+- Voucher lookup by link ID and a claim request through the API.
 
-Реальное создание и получение ваучера требуют работающего escrow backend. Без него можно запустить и изучить интерфейс, но funding-транзакция не отправляется, а выплата не производится.
+Actual voucher creation and claiming require a running escrow backend. Without one, you can launch and explore the interface, but funding transactions are not submitted and payouts are not made.
 
-## Архитектура
+## Architecture
 
 ```text
-Отправитель ── создаёт ваучер ──▶ Frontend ── prepare/fund ──▶ Escrow backend
-                                     │                               │
-                                     └── подписывает перевод ──▶ Solana RPC
+Sender ── creates voucher ──▶ Frontend ── prepare/fund ──▶ Escrow backend
+                                  │                              │
+                                  └── signs transfer ──▶ Solana RPC
 
-Получатель ── открывает ссылку ──▶ Frontend ── читает ваучер ──▶ Escrow backend
-      └── подключает кошелёк ◀── выплата после claim ◀─────────────┘
+Recipient ── opens link ──▶ Frontend ── reads voucher ──▶ Escrow backend
+      └── connects wallet ◀── payout after claim ◀─────────────┘
 ```
 
-Frontend не хранит приватный ключ escrow. Подробные требования к `prepare`, `fund`, чтению ваучера и `claim` приведены в [BACKEND_API.md](./BACKEND_API.md).
+The frontend does not store the escrow private key. See [BACKEND_API.md](./BACKEND_API.md) for the requirements for `prepare`, `fund`, voucher lookup, and `claim`.
 
-## Технологии
+## Tech stack
 
-| Слой | Технологии |
+| Layer | Technologies |
 | --- | --- |
-| Интерфейс | React 19, Vite 6, CSS, Tailwind CSS (конфигурация) |
-| Кошелёк и транзакции | Solana Wallet Adapter, `@solana/web3.js`, `@solana/spl-token` |
-| Анимации и иконки | Framer Motion, Lucide |
-| Escrow | Отдельный backend по контракту из `BACKEND_API.md`; в репозитории отсутствует |
+| Interface | React 19, Vite 6, CSS, Tailwind CSS configuration |
+| Wallet and transactions | Solana Wallet Adapter, `@solana/web3.js`, `@solana/spl-token` |
+| Animation and icons | Framer Motion, Lucide |
+| Escrow | Separate backend defined by `BACKEND_API.md`; not included in this repository |
 
-## Запуск
+## Quick start
 
-Нужен Node.js 18+ и npm.
+Requirements: Node.js 18+ and npm.
 
 ```bash
 git clone https://github.com/janbakutov0812-afk/solana-gift-vouchers.git
@@ -64,35 +64,35 @@ cp .env.example .env
 npm run dev
 ```
 
-По умолчанию используется Solana devnet. Чтобы подключить escrow backend, укажи его публичный базовый URL в `VITE_VOUCHER_API_URL`.
+The default network is Solana devnet. To enable the escrow flow, set `VITE_VOUCHER_API_URL` to the public base URL of your escrow API.
 
-| Переменная | Назначение | Пример по умолчанию |
+| Variable | Purpose | Default example |
 | --- | --- | --- |
-| `VITE_SOLANA_NETWORK` | Сеть для отображения и выбора USDC mint | `devnet` |
+| `VITE_SOLANA_NETWORK` | Network label and USDC mint selection | `devnet` |
 | `VITE_SOLANA_RPC_URL` | RPC endpoint | `https://api.devnet.solana.com` |
-| `VITE_VOUCHER_API_URL` | Базовый URL escrow API | пусто |
+| `VITE_VOUCHER_API_URL` | Escrow API base URL | Empty |
 
-При смене сети согласуй `VITE_SOLANA_NETWORK` и `VITE_SOLANA_RPC_URL`. Не переключай приложение на mainnet до подготовки и проверки escrow: фронтенд не заменяет безопасное хранение средств и серверную защиту от повторной выплаты.
+When changing networks, keep `VITE_SOLANA_NETWORK` and `VITE_SOLANA_RPC_URL` in sync. Do not use mainnet until the escrow flow has been implemented and reviewed; the frontend alone cannot provide secure custody or prevent duplicate payouts.
 
-Для production-сборки выполни `npm run build`; результат появится в `dist/`.
+To create a production build, run `npm run build`. The output is written to `dist/`.
 
-## Следующие шаги
+## Roadmap
 
-Это план дальнейшей работы, а не уже реализованные функции:
+These are proposed next steps, not implemented features:
 
-- Реализовать и развернуть escrow backend либо проверенную on-chain escrow-программу.
-- Добавить хранение ваучеров, сроки действия и атомарную защиту от повторного claim.
-- Проверить сценарии ошибок и повторных запросов для SOL и USDC в devnet.
-- Подготовить безопасный production-процесс и только затем рассматривать mainnet.
+- Build and deploy the escrow backend or a reviewed on-chain escrow program.
+- Add voucher persistence, expiration, and atomic protection against duplicate claims.
+- Exercise error and retry scenarios for SOL and USDC on devnet.
+- Prepare a secure production process before considering mainnet.
 
-## Безопасность
+## Security
 
-- Не помещай приватные ключи, seed-фразы или другие секреты в frontend, `.env` с `VITE_*`-переменными или GitHub.
-- Frontend намеренно не отправляет перевод, если escrow API не настроен.
-- Не используй mainnet для ваучеров, пока backend или on-chain escrow не реализован и не проверен.
+- Never put private keys, seed phrases, or other secrets in the frontend, `VITE_*` environment variables, or GitHub.
+- The frontend intentionally does not submit a transfer when the escrow API is not configured.
+- Do not use mainnet vouchers until the backend or on-chain escrow is implemented and reviewed.
 
 ---
 
-## Лицензия
+## License
 
-Лицензия пока не добавлена в репозиторий.
+No license has been added to this repository yet.
