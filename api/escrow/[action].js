@@ -220,6 +220,17 @@ async function details(id) {
 }
 
 async function submitClaim(voucher, recipient) {
+  const payout = await signedPayout(voucher, recipient)
+  const stored = await sql()`UPDATE escrow_vouchers SET status = 'claiming', claim_tx_hash = ${payout.signature},
+    claim_raw_transaction = ${payout.raw.toString('base64')}, claim_blockhash = ${payout.blockhash},
+    claim_last_valid_block_height = ${payout.lastValidBlockHeight}
+    WHERE voucher_id = ${voucher.voucher_id} AND status = 'claim_preparing' AND recipient_address = ${recipient}
+    RETURNING voucher_id`
+  if (!stored.length) throw new Error('Voucher claim is no longer reserved')
+  return broadcastClaim({ ...voucher, claim_tx_hash: payout.signature, claim_raw_transaction: payout.raw.toString('base64'), claim_blockhash: payout.blockhash, claim_last_valid_block_height: payout.lastValidBlockHeight })
+}
+
+async function signedPayout(voucher, recipient) {
   const escrow = Keypair.fromSecretKey(decryptSecret(voucher.escrow_secret))
   const receiver = address(recipient, 'recipient')
   const feePayer = feePayerKeypair()
@@ -247,13 +258,44 @@ async function submitClaim(voucher, recipient) {
   transaction.partialSign(escrow, feePayer)
   const raw = transaction.serialize()
   const signature = bs58.encode(transaction.signature)
-  const stored = await sql()`UPDATE escrow_vouchers SET status = 'claiming', claim_tx_hash = ${signature},
-    claim_raw_transaction = ${raw.toString('base64')}, claim_blockhash = ${blockhash},
-    claim_last_valid_block_height = ${lastValidBlockHeight}
-    WHERE voucher_id = ${voucher.voucher_id} AND status = 'claim_preparing' AND recipient_address = ${receiver.toBase58()}
+  return { signature, raw, blockhash, lastValidBlockHeight, receiver: receiver.toBase58() }
+}
+
+async function assertFeePayerFunded(voucher, raw) {
+  const feePayer = feePayerKeypair()
+  const transaction = Transaction.from(raw)
+  const estimatedFee = await solana().getFeeForMessage(transaction.compileMessage(), 'confirmed')
+  let requiredLamports = estimatedFee.value ?? 5000
+  if (voucher.currency === 'USDC') {
+    const receiver = new PublicKey(voucher.recipient_address)
+    const destinationAta = await getAssociatedTokenAddress(mints[network], receiver, true)
+    if (!await solana().getAccountInfo(destinationAta, 'confirmed')) {
+      requiredLamports += await solana().getMinimumBalanceForRentExemption(165)
+    }
+  }
+  const balance = await solana().getBalance(feePayer.publicKey, 'confirmed')
+  if (balance < requiredLamports) {
+    const requiredSol = (requiredLamports / 1e9).toFixed(6)
+    const availableSol = (balance / 1e9).toFixed(6)
+    const error = new Error(`Devnet fee payer needs at least ${requiredSol} SOL for this payout; current balance is ${availableSol} SOL.`)
+    error.code = 'FEE_PAYER_UNFUNDED'
+    throw error
+  }
+}
+
+async function refreshExpiredClaim(voucher) {
+  const payout = await signedPayout(voucher, voucher.recipient_address)
+  const replacement = await sql()`UPDATE escrow_vouchers SET claim_tx_hash = ${payout.signature},
+    claim_raw_transaction = ${payout.raw.toString('base64')}, claim_blockhash = ${payout.blockhash},
+    claim_last_valid_block_height = ${payout.lastValidBlockHeight}
+    WHERE voucher_id = ${voucher.voucher_id} AND status = 'claiming' AND claim_tx_hash = ${voucher.claim_tx_hash}
     RETURNING voucher_id`
-  if (!stored.length) throw new Error('Voucher claim is no longer reserved')
-  return broadcastClaim({ ...voucher, claim_tx_hash: signature, claim_raw_transaction: raw.toString('base64'), claim_blockhash: blockhash, claim_last_valid_block_height: lastValidBlockHeight })
+  if (replacement.length) {
+    return broadcastClaim({ ...voucher, claim_tx_hash: payout.signature, claim_raw_transaction: payout.raw.toString('base64'), claim_blockhash: payout.blockhash, claim_last_valid_block_height: payout.lastValidBlockHeight })
+  }
+  const current = await sql()`SELECT * FROM escrow_vouchers WHERE voucher_id = ${voucher.voucher_id} LIMIT 1`
+  if (current[0]?.status === 'claiming' && current[0]?.claim_raw_transaction) return broadcastClaim(current[0])
+  throw new Error('Voucher claim changed while recovering its expired transaction. Please retry.')
 }
 
 async function broadcastClaim(voucher) {
@@ -263,7 +305,20 @@ async function broadcastClaim(voucher) {
   if (prior.value[0]?.err) throw new Error('Payout transaction failed on-chain')
   const confirmed = prior.value[0]?.confirmationStatus === 'confirmed' || prior.value[0]?.confirmationStatus === 'finalized'
   if (!confirmed) {
-    const submittedSignature = await solana().sendRawTransaction(raw, { preflightCommitment: 'confirmed' })
+    if (await solana().getBlockHeight('confirmed') > Number(voucher.claim_last_valid_block_height)) {
+      return refreshExpiredClaim(voucher)
+    }
+    await assertFeePayerFunded(voucher, raw)
+    let submittedSignature
+    try {
+      submittedSignature = await solana().sendRawTransaction(raw, { preflightCommitment: 'confirmed' })
+    } catch (error) {
+      const expired = /blockhash not found/i.test(error.message || '')
+        && await solana().getBlockHeight('confirmed') > Number(voucher.claim_last_valid_block_height)
+      if (!expired) throw error
+      // Rebuild expired transactions; keeping the old signature would strand the voucher.
+      return refreshExpiredClaim(voucher)
+    }
     const confirmation = await solana().confirmTransaction({
       signature: submittedSignature, blockhash: voucher.claim_blockhash,
       lastValidBlockHeight: Number(voucher.claim_last_valid_block_height),
@@ -290,7 +345,15 @@ async function claim(body) {
   }
   if (voucher.status === 'claiming' && voucher.claim_raw_transaction) {
     if (voucher.recipient_address !== recipient) throw new Error('Voucher claim is already in progress')
-    return broadcastClaim(voucher)
+    try { return await broadcastClaim(voucher) } catch (error) {
+      if (error.code === 'FEE_PAYER_UNFUNDED') {
+        await sql()`UPDATE escrow_vouchers SET status = 'active', recipient_address = NULL,
+          claim_tx_hash = NULL, claim_raw_transaction = NULL, claim_blockhash = NULL,
+          claim_last_valid_block_height = NULL
+          WHERE voucher_id = ${voucher.voucher_id} AND status = 'claiming' AND recipient_address = ${recipient}`
+      }
+      throw error
+    }
   }
   if (voucher.status !== 'active') throw new Error('Voucher is not funded or is no longer claimable')
 
@@ -301,8 +364,15 @@ async function claim(body) {
   try {
     return await submitClaim(voucher, recipient)
   } catch (error) {
-    await sql()`UPDATE escrow_vouchers SET status = 'active', recipient_address = NULL
-      WHERE voucher_id = ${voucher.voucher_id} AND status = 'claim_preparing'`
+    if (error.code === 'FEE_PAYER_UNFUNDED') {
+      await sql()`UPDATE escrow_vouchers SET status = 'active', recipient_address = NULL,
+        claim_tx_hash = NULL, claim_raw_transaction = NULL, claim_blockhash = NULL,
+        claim_last_valid_block_height = NULL
+        WHERE voucher_id = ${voucher.voucher_id} AND status IN ('claim_preparing', 'claiming') AND recipient_address = ${recipient}`
+    } else {
+      await sql()`UPDATE escrow_vouchers SET status = 'active', recipient_address = NULL
+        WHERE voucher_id = ${voucher.voucher_id} AND status = 'claim_preparing'`
+    }
     throw error
   }
 }
@@ -343,7 +413,8 @@ export default async function handler(request, response) {
   } catch (error) {
     console.error('Escrow API error:', error)
     const message = error instanceof SyntaxError ? 'Invalid request body' : error.message || 'Unexpected server error'
-    const status = /not found/i.test(message) ? 404
+    const status = error.code === 'FEE_PAYER_UNFUNDED' ? 503
+      : /not found/i.test(message) ? 404
       : /already|in progress|claimable|reserved/i.test(message) ? 409
         : /^(Invalid |Amount |Currency |Unknown |Message |Transaction |Funding transaction |No matching |Voucher )/.test(message) ? 400 : 500
     return send(response, status, { status: 'error', message }, routeOrigin)
