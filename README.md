@@ -2,7 +2,7 @@
 
 > Create a digital greeting card with SOL or USDC and send it to someone you care about with a single link.
 
-**Status:** MVP frontend. Real voucher creation and claiming require an escrow backend, which is not included in this repository. Without `VITE_VOUCHER_API_URL`, the frontend will not submit a funding transaction.
+**Status:** MVP frontend with a local devnet escrow API. Do not use the local custodial server with real funds or mainnet.
 
 [Escrow API contract](./BACKEND_API.md) · [GitHub repository](https://github.com/janbakutov0812-afk/solana-gift-vouchers)
 
@@ -28,7 +28,7 @@ The sender chooses a design, SOL or USDC, and an amount. The recipient opens the
 - Funding transaction preparation through the API, wallet signing, and on-chain confirmation.
 - Voucher lookup by link ID and a claim request through the API.
 
-Actual voucher creation and claiming require a running escrow backend. Without one, you can launch and explore the interface, but funding transactions are not submitted and payouts are not made.
+Voucher creation and claims require the local escrow API to be running. The development API uses temporary custodial signers and devnet only.
 
 ## Architecture
 
@@ -41,7 +41,7 @@ Recipient ── opens link ──▶ Frontend ── reads voucher ──▶ Es
       └── connects wallet ◀── payout after claim ◀─────────────┘
 ```
 
-The frontend does not store the escrow private key. See [BACKEND_API.md](./BACKEND_API.md) for the requirements for `prepare`, `fund`, voucher lookup, and `claim`.
+The frontend does not store the escrow private key. See [BACKEND_API.md](./BACKEND_API.md) for API behavior and security requirements.
 
 ## Tech stack
 
@@ -50,7 +50,7 @@ The frontend does not store the escrow private key. See [BACKEND_API.md](./BACKE
 | Interface | React 19, Vite 6, CSS, Tailwind CSS configuration |
 | Wallet and transactions | Solana Wallet Adapter, `@solana/web3.js`, `@solana/spl-token` |
 | Animation and icons | Framer Motion, Lucide |
-| Escrow | Separate backend defined by `BACKEND_API.md`; not included in this repository |
+| Escrow | Local devnet API in `backend/server.js`; not suitable for production |
 
 ## Quick start
 
@@ -60,27 +60,28 @@ Requirements: Node.js 18+ and npm.
 git clone https://github.com/janbakutov0812-afk/solana-gift-vouchers.git
 cd solana-gift-vouchers
 npm ci
-cp .env.example .env
-npm run dev
+npm run dev:setup # creates ignored .env.local and local devnet signing keys (once)
+npm run dev:api   # terminal 1: local Escrow API
+npm run dev       # terminal 2: Vite frontend
 ```
 
-The default network is Solana devnet. To enable the escrow flow, set `VITE_VOUCHER_API_URL` to the public base URL of your escrow API.
+The default network is Solana devnet. `.env.local` points the frontend to `http://localhost:8787` and is excluded from Git.
 
 | Variable | Purpose | Default example |
 | --- | --- | --- |
 | `VITE_SOLANA_NETWORK` | Network label and USDC mint selection | `devnet` |
 | `VITE_SOLANA_RPC_URL` | RPC endpoint | `https://api.devnet.solana.com` |
-| `VITE_VOUCHER_API_URL` | Escrow API base URL | Empty |
+| `VITE_VOUCHER_API_URL` | Escrow API base URL | `http://localhost:8787` in `.env.local` |
 
-When changing networks, keep `VITE_SOLANA_NETWORK` and `VITE_SOLANA_RPC_URL` in sync. Do not use mainnet until the escrow flow has been implemented and reviewed; the frontend alone cannot provide secure custody or prevent duplicate payouts.
+Keep `VITE_SOLANA_NETWORK` and `VITE_SOLANA_RPC_URL` in sync. The included API refuses to run on mainnet; it is a local development server, not a production custody system.
 
 To create a production build, run `npm run build`. The output is written to `dist/`.
 
 ## Roadmap
 
-These are proposed next steps, not implemented features:
+These are proposed next steps:
 
-- Build and deploy the escrow backend or a reviewed on-chain escrow program.
+- Replace the local custodial development API with a reviewed on-chain escrow program or hardened production backend.
 - Add voucher persistence, expiration, and atomic protection against duplicate claims.
 - Exercise error and retry scenarios for SOL and USDC on devnet.
 - Prepare a secure production process before considering mainnet.
@@ -88,8 +89,8 @@ These are proposed next steps, not implemented features:
 ## Security
 
 - Never put private keys, seed phrases, or other secrets in the frontend, `VITE_*` environment variables, or GitHub.
-- The frontend intentionally does not submit a transfer when the escrow API is not configured.
-- Do not use mainnet vouchers until the backend or on-chain escrow is implemented and reviewed.
+- The local backend stores voucher signing keys encrypted in an ignored development data file; protect and delete that file if no longer needed.
+- Do not use the local escrow server with mainnet or valuable assets.
 
 ---
 

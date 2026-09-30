@@ -3,5 +3,6 @@ dist/
 .env
 .env.*
 !.env.example
+backend/data/
 coverage/
 .DS_Store

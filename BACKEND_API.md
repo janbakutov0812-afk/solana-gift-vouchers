@@ -1,12 +1,107 @@
 # Escrow API contract
 
-The browser never receives an escrow private key. Deploy a trusted backend or an audited on-chain escrow program before enabling real gifts. The frontend expects `VITE_VOUCHER_API_URL` to expose these JSON endpoints:
+The frontend expects `VITE_VOUCHER_API_URL` to be the API origin, for example `https://api.example.com`. It never receives an escrow private key. Set the frontend and backend to the same Solana cluster.
 
-- `POST /vouchers/prepare` with `{ creator, currency, amount, template, message }` returns `{ voucherId, escrowAddress }`. Create an expiring, one-time intent in durable storage. The escrow address must belong to this intent.
-- `POST /vouchers/:id/fund` with `{ creator, signature }` verifies the confirmed transfer on the selected cluster, token mint, amount, destination and creator, then marks the intent funded. It must be idempotent.
-- `GET /vouchers/:id` returns `{ voucherId, currency, amount, template, message }` for funded, unclaimed vouchers only.
-- `POST /vouchers/:id/claim` with `{ recipient }` atomically reserves an eligible voucher, pays the recipient from the escrow signer, submits the transaction, and returns `{ signature, blockhash, lastValidBlockHeight }`. Enforce one claim per voucher and handle retries idempotently.
+The repository's `backend/server.js` is a **local devnet prototype only**. It creates per-voucher custodial keypairs and stores their encrypted secret keys in an ignored local JSON file; this is not production custody, and it must not be pointed at mainnet or used for valuable funds. Its fee-payer key must have devnet SOL for claim transaction fees and USDC recipient token-account rent.
 
-The claim service must apply the requested 5,000-lamport (0.000005 SOL) fee policy to SOL vouchers and account for the actual network fee. A USDC transfer cannot pay a SOL-denominated fee out of USDC; the backend escrow must hold SOL for that fee or define a clearly disclosed conversion policy. Check balances, prevent replay/double claims, validate recipient addresses, and keep signing keys in a secrets manager or use a program-derived escrow. Add rate limits and origin/authentication controls. Do not store private keys in the frontend, URL, browser storage, or `VITE_*` variables.
+## Create and fund a voucher
 
-USDC mint is selected from the configured network: the Circle devnet mint on devnet and the canonical USDC mint on mainnet-beta. The wallet UI defaults to devnet; do not point it at mainnet until backend, custody, and transaction handling have been reviewed.
+Funding needs an escrow destination before the sender can sign a transfer. The frontend therefore calls `prepare` first, then submits the confirmed transaction to `create` for idempotent verification and persistence.
+
+### `POST /api/escrow/prepare`
+
+Request:
+
+```json
+{
+  "senderAddress": "base58 public key",
+  "amount": 0.25,
+  "currency": "SOL",
+  "templateId": "birthday",
+  "message": "Поздравление"
+}
+```
+
+Response:
+
+```json
+{
+  "escrowAddress": "base58 public key"
+}
+```
+
+The API must validate the request, choose a cluster-specific escrow destination, and associate it with a short-lived intent. The destination should be unique per intent, especially for SOL, so incoming transfers can be attributed without ambiguity. For USDC, the frontend creates/transfers to the destination's associated token account.
+
+### `POST /api/escrow/create`
+
+After wallet signature and confirmed on-chain funding, the frontend sends:
+
+```json
+{
+  "senderAddress": "base58 public key",
+  "amount": 0.25,
+  "currency": "SOL",
+  "templateId": "birthday",
+  "message": "Поздравление",
+  "txHash": "confirmed Solana transaction signature"
+}
+```
+
+Response:
+
+```json
+{ "status": "success", "voucherId": "escrow_abc123xyz" }
+```
+
+The backend must verify the confirmed signature against the prepared intent, cluster, sender, asset mint, amount and destination. Make this endpoint idempotent by transaction signature so the sender can safely retry if the API is temporarily unavailable after funding. Return errors as JSON with a `message` field and a non-2xx status.
+
+## Read a voucher
+
+### `GET /api/escrow/details?id=escrow_abc123xyz`
+
+Return the voucher's template, amount, currency, message and `status` (`active` or `claimed`). The frontend validates the `id` query parameter before sending it. A claimed voucher remains readable so the recipient can see the card, but its claim button is disabled.
+
+## Claim a voucher
+
+### `POST /api/escrow/claim`
+
+Request:
+
+```json
+{
+  "voucherId": "escrow_abc123xyz",
+  "recipientAddress": "base58 public key"
+}
+```
+
+Response:
+
+```json
+{ "txHash": "confirmed or submitted Solana transaction signature" }
+```
+
+The backend must atomically reserve each eligible voucher, validate the recipient address, submit the payout, and make retries idempotent. The frontend waits for the returned transaction to confirm before displaying “Успешно выплачено”.
+
+## Security and operations
+
+- A link containing only a voucher ID is a bearer link if the API allows whoever opens it to claim. Use a high-entropy, unguessable ID or add a separate claim secret; never treat a sequential database ID as authorization.
+- Keep signing keys in a secrets manager or use a reviewed on-chain program. Never put private keys in the frontend, browser storage, URLs, or `VITE_*` variables.
+- Verify chain, token mint, amount, sender and destination from transaction data; do not trust client-submitted metadata.
+- Apply replay protection, idempotency, rate limits, and origin/authentication controls.
+- USDC requires a destination associated token account. Decide which party or sponsor funds its rent-exempt balance and transaction fees.
+- SOL and USDC vouchers need explicit expiry/refund behavior and a disclosed fee policy. A USDC transfer cannot pay a SOL-denominated fee directly.
+- Do not use mainnet until custody, signing, recovery and payout flows have been reviewed.
+
+## Vercel deployment
+
+The production routes are implemented by `api/escrow/[action].js`; they use Neon Postgres so voucher state is not written to the temporary function filesystem. The function creates its table on first request. Connect a Neon Postgres database through the Vercel Marketplace and provide its server-only `DATABASE_URL` variable to the project.
+
+Set these server-only Vercel variables before using the API:
+
+- `ESCROW_NETWORK=devnet`
+- `ESCROW_RPC_URL=https://api.devnet.solana.com` (or a trusted devnet RPC URL)
+- `ESCROW_ALLOWED_ORIGINS=https://solana-gift-vouchers-nine.vercel.app`
+- `ESCROW_MASTER_KEY` — 32 random bytes encoded as 64 hex characters
+- `ESCROW_FEE_PAYER_SECRET_KEY` — JSON array containing a 64-byte Solana keypair secret
+
+Never prefix these secrets with `VITE_`. The public frontend API base defaults to the current site origin, so Vercel serves `/api/escrow/*` on the same HTTPS domain. The fee payer needs devnet SOL before claim transactions can succeed. The local `backend/server.js` remains a devnet-only file-backed development server and must not be used as the Vercel runtime.

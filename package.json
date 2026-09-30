@@ -5,15 +5,19 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:setup": "node backend/setup-local.js",
+    "dev:api": "node --env-file=.env.local backend/server.js",
     "build": "vite build",
     "preview": "vite preview"
   },
   "dependencies": {
+    "@neondatabase/serverless": "^1.1.0",
     "@solana/spl-token": "^0.4.15",
     "@solana/wallet-adapter-phantom": "^0.9.30",
     "@solana/wallet-adapter-react": "^0.15.40",
     "@solana/wallet-adapter-react-ui": "^0.9.40",
     "@solana/web3.js": "^1.99.0",
+    "bs58": "^6.0.0",
     "buffer": "^6.0.3",
     "framer-motion": "^12.23.12",
     "lucide-react": "^0.468.0",
