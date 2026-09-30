@@ -102,6 +102,6 @@ Set these server-only Vercel variables before using the API:
 - `ESCROW_RPC_URL=https://api.devnet.solana.com` (or a trusted devnet RPC URL)
 - `ESCROW_ALLOWED_ORIGINS=https://solana-gift-vouchers-nine.vercel.app`
 - `ESCROW_MASTER_KEY` — 32 random bytes encoded as 64 hex characters
-- `ESCROW_FEE_PAYER_SECRET_KEY` — JSON array containing a 64-byte Solana keypair secret
+- `ESCROW_FEE_PAYER_SECRET_KEY` — base58-encoded 64-byte Solana keypair secret (JSON byte arrays are also accepted for compatibility)
 
 Never prefix these secrets with `VITE_`. The public frontend API base defaults to the current site origin, so Vercel serves `/api/escrow/*` on the same HTTPS domain. The fee payer needs devnet SOL before claim transactions can succeed. The local `backend/server.js` remains a devnet-only file-backed development server and must not be used as the Vercel runtime.

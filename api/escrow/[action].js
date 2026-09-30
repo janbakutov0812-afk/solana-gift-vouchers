@@ -72,14 +72,26 @@ function masterKey() {
 }
 
 function feePayerKeypair() {
+  const secret = (process.env.ESCROW_FEE_PAYER_SECRET_KEY || '').trim()
   let bytes
-  try { bytes = JSON.parse(process.env.ESCROW_FEE_PAYER_SECRET_KEY || '[]') } catch {
-    throw new Error('ESCROW_FEE_PAYER_SECRET_KEY must be a JSON byte array.')
+  if (secret.startsWith('[') || secret.startsWith('"')) {
+    try {
+      bytes = JSON.parse(secret)
+      if (typeof bytes === 'string') bytes = JSON.parse(bytes)
+    } catch {
+      throw new Error('ESCROW_FEE_PAYER_SECRET_KEY must be base58 or a JSON byte array.')
+    }
+    if (!Array.isArray(bytes) || bytes.length !== 64 || bytes.some((byte) => !Number.isInteger(byte) || byte < 0 || byte > 255)) {
+      throw new Error('ESCROW_FEE_PAYER_SECRET_KEY must contain exactly 64 secret bytes.')
+    }
+    bytes = Uint8Array.from(bytes)
+  } else {
+    try { bytes = bs58.decode(secret) } catch {
+      throw new Error('ESCROW_FEE_PAYER_SECRET_KEY must be base58 or a JSON byte array.')
+    }
+    if (bytes.length !== 64) throw new Error('ESCROW_FEE_PAYER_SECRET_KEY must contain exactly 64 secret bytes.')
   }
-  if (!Array.isArray(bytes) || bytes.length !== 64 || bytes.some((byte) => !Number.isInteger(byte) || byte < 0 || byte > 255)) {
-    throw new Error('ESCROW_FEE_PAYER_SECRET_KEY must be a JSON byte array with 64 bytes.')
-  }
-  return Keypair.fromSecretKey(Uint8Array.from(bytes))
+  return Keypair.fromSecretKey(bytes)
 }
 
 function encryptSecret(secretKey) {
@@ -314,7 +326,9 @@ export default async function handler(request, response) {
   try {
     if (request.method === 'GET' && action === 'health') {
       await ensureSchema()
-      return send(response, 200, { status: 'ok', network }, routeOrigin)
+      const feePayer = feePayerKeypair()
+      const feePayerBalanceLamports = await solana().getBalance(feePayer.publicKey, 'confirmed')
+      return send(response, 200, { status: 'ok', network, feePayerConfigured: true, feePayerBalanceLamports }, routeOrigin)
     }
     if (request.method === 'POST' && action === 'prepare') return send(response, 200, await prepare(request.body || {}), routeOrigin)
     if (request.method === 'POST' && action === 'create') return send(response, 200, await create(request.body || {}), routeOrigin)
