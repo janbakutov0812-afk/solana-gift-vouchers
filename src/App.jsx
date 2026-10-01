@@ -2,8 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { AnimatePresence, motion, useMotionValue, useSpring, useTransform } from 'framer-motion'
 import { useConnection, useWallet } from '@solana/wallet-adapter-react'
 import { useWalletModal } from '@solana/wallet-adapter-react-ui'
-import { LAMPORTS_PER_SOL, Transaction } from '@solana/web3.js'
-import { claimGiftInstruction, createGiftInstruction, decodeBase64Url, USDC_DEVNET_MINT } from './solgift-program.js'
+import { LAMPORTS_PER_SOL, PublicKey, Transaction } from '@solana/web3.js'
+import { claimGiftInstruction, createGiftInstruction, decodeBase64Url, SOLGIFT_PROGRAM_ID, USDC_DEVNET_MINT } from './solgift-program.js'
 import {
   ArrowDown, ArrowRight, ArrowUpRight, Check, ChevronDown, Copy, Gift,
   LockKeyhole, Menu, ShieldCheck, Sparkles, Wallet, X, Zap,
@@ -790,6 +790,22 @@ function ClaimPage({ voucher, onToast, isVoucherLoading = false }) {
     if (isApiLoading || isUnavailable) return
     setIsApiLoading(true)
     try {
+      if (voucher.onchain && voucher.giftAddress) {
+        const giftAccount = await connection.getAccountInfo(new PublicKey(voucher.giftAddress), 'confirmed')
+        if (!giftAccount?.owner.equals(SOLGIFT_PROGRAM_ID) || giftAccount.data.length < 163) {
+          throw new Error('Не удалось прочитать состояние подарка в Solana')
+        }
+        const status = giftAccount.data[129]
+        if (status === 1) {
+          setClaimed(true)
+          const recipient = giftAccount.data[130] === 1
+            ? new PublicKey(giftAccount.data.subarray(131, 163)).toBase58()
+            : ''
+          throw new Error(`Этот подарок уже забран${recipient ? ` кошельком ${recipient.slice(0, 5)}…${recipient.slice(-5)}` : ''}`)
+        }
+        if (status === 2) throw new Error('Срок подарка истёк, отправитель уже вернул средства')
+        if (status !== 0) throw new Error('Подарок сейчас недоступен в Solana')
+      }
       onToast({ type: 'sent', message: 'Загрузка... Запрашиваем выплату' })
       const result = await voucherApi('/api/escrow/claim', {
         voucherId: voucher.voucherId, recipientAddress: publicKey.toBase58(), secretWord,
@@ -835,6 +851,7 @@ function ClaimPage({ voucher, onToast, isVoucherLoading = false }) {
       const message = /secret word is incorrect/i.test(error?.message || '') ? 'Секретная фраза неверна'
         : /too many secret-word attempts/i.test(error?.message || '') ? 'Слишком много попыток. Попробуй через 15 минут'
           : /predates secret-word/i.test(error?.message || '') ? 'Этот ваучер создан до защиты фразой; попроси отправителя создать новый'
+            : /уже забран|срок подарка истёк|подарок сейчас недоступен/i.test(error?.message || '') ? error.message
             : `Ошибка получения: ${error?.message || 'Сервис недоступен'}`
       onToast({ type: 'error', message: rejected ? 'Транзакция отклонена пользователем' : message })
     } finally { setIsApiLoading(false) }
