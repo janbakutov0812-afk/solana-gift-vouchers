@@ -1,6 +1,6 @@
 # Solgift — crypto gifts in one link
 
-> Create a digital greeting card with SOL or USDC and send it to someone you care about with a single link.
+> Create a digital greeting card with SOL, USDC, or a supported classic SPL token and send it to someone you care about with a single link.
 
 **Status:** MVP frontend with a local devnet escrow API. Do not use the local custodial server with real funds or mainnet.
 
@@ -12,18 +12,18 @@
 
 Sending cryptocurrency to someone who is new to Web3 can mean explaining wallet addresses, wallets, and transaction steps. Solgift turns a transfer into a familiar gift experience: a designed greeting card, a personal message, and a link for the recipient.
 
-The sender chooses a design, SOL or USDC, an amount, and a secret phrase. The recipient opens the link, connects a wallet, enters the phrase shared separately, and claims the gift. The escrow backend verifies the phrase and prevents a voucher from being claimed more than once.
+The sender chooses a design, SOL, USDC, or a supported classic SPL mint, an amount, and a secret phrase. The recipient opens the link, connects a wallet, enters the phrase shared separately, and claims the gift. The escrow backend verifies the phrase and prevents a voucher from being claimed more than once.
 
 ## Why Solana
 
-- The app supports gifts denominated in SOL or USDC on Solana.
+- The app supports SOL, canonical USDC, and classic SPL tokens on Solana Devnet. SPL gifts require the original SPL Token Program, at most 9 decimals, and no freeze authority. Token-2022 and its extensions are not supported.
 - Wallet connections use Solana Wallet Adapter, and transactions are confirmed through RPC.
 - The gift is designed to be shared as a link, so the sender does not need to collect the recipient's wallet address in advance.
 
 ## MVP features
 
 - Phantom wallet connection and SOL balance display.
-- SOL or USDC selection, amount entry, a personal message, and four greeting card designs.
+- SOL, USDC, or classic SPL mint selection, amount entry, a personal message, and four greeting card designs.
 - Gift preview and recipient screen.
 - Funding transaction preparation through the API, wallet signing, and on-chain confirmation.
 - Voucher lookup by link ID and a claim request through the API.
@@ -76,6 +76,7 @@ The default network is Solana devnet. `.env.local` points the frontend to `http:
 | --- | --- | --- |
 | `VITE_SOLANA_NETWORK` | Network label and USDC mint selection | `devnet` |
 | `VITE_SOLANA_RPC_URL` | RPC endpoint | `https://api.devnet.solana.com` |
+| `VITE_ENABLE_CLASSIC_SPL` | Show the custom classic SPL mint flow; enable only after the upgraded program is deployed | `false` |
 | `VITE_VOUCHER_API_URL` | Escrow API base URL | `http://localhost:8787` in `.env.local` |
 
 Keep `VITE_SOLANA_NETWORK` and `VITE_SOLANA_RPC_URL` in sync. The included API refuses to run on mainnet; it is a local development server, not a production custody system.

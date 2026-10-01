@@ -5,11 +5,11 @@ import {
   Connection, Keypair, PublicKey, SystemProgram, Transaction,
 } from '@solana/web3.js'
 import {
-  TOKEN_PROGRAM_ID, createAssociatedTokenAccountIdempotentInstruction,
+  TOKEN_PROGRAM_ID, createAssociatedTokenAccountIdempotentInstruction, getMint,
   createTransferCheckedInstruction, getAssociatedTokenAddress,
 } from '@solana/spl-token'
 import { createSecretWordVerifier, verifySecretWord } from '../../lib/secret-word.js'
-import { CREATE_SOL_DISCRIMINATOR, CREATE_USDC_DISCRIMINATOR, decodeGiftAccount, giftAddress, SOLGIFT_PROGRAM_ID } from '../../lib/onchain-gift.js'
+import { CREATE_SOL_DISCRIMINATOR, CREATE_USDC_DISCRIMINATOR, CREATE_SPL_DISCRIMINATOR, decodeGiftAccount, giftAddress, SOLGIFT_PROGRAM_ID } from '../../lib/onchain-gift.js'
 
 const templates = new Set(['birthday', 'coffee', 'thanks', 'study'])
 const network = process.env.ESCROW_NETWORK || 'devnet'
@@ -36,7 +36,7 @@ async function ensureSchema() {
       voucher_id text PRIMARY KEY,
       sender_address text NOT NULL,
       amount numeric(30, 9) NOT NULL,
-      currency text NOT NULL CHECK (currency IN ('SOL', 'USDC')),
+      currency text NOT NULL CHECK (currency IN ('SOL', 'USDC', 'SPL')),
       template_id text NOT NULL,
       message text NOT NULL,
       escrow_address text NOT NULL UNIQUE,
@@ -52,6 +52,8 @@ async function ensureSchema() {
       secret_attempt_window timestamptz NOT NULL DEFAULT now(),
       onchain boolean NOT NULL DEFAULT false,
       gift_hash text,
+      token_mint text,
+      token_decimals smallint,
       claim_tx_hash text,
       claim_raw_transaction text,
       claim_blockhash text,
@@ -66,6 +68,11 @@ async function ensureSchema() {
     await sql()`ALTER TABLE escrow_vouchers ADD COLUMN IF NOT EXISTS secret_attempt_window timestamptz NOT NULL DEFAULT now()`
     await sql()`ALTER TABLE escrow_vouchers ADD COLUMN IF NOT EXISTS onchain boolean NOT NULL DEFAULT false`
     await sql()`ALTER TABLE escrow_vouchers ADD COLUMN IF NOT EXISTS gift_hash text`
+    await sql()`ALTER TABLE escrow_vouchers
+      DROP CONSTRAINT IF EXISTS escrow_vouchers_currency_check,
+      ADD CONSTRAINT escrow_vouchers_currency_check CHECK (currency IN ('SOL', 'USDC', 'SPL'))`
+    await sql()`ALTER TABLE escrow_vouchers ADD COLUMN IF NOT EXISTS token_mint text`
+    await sql()`ALTER TABLE escrow_vouchers ADD COLUMN IF NOT EXISTS token_decimals smallint`
   })().catch((error) => { schemaReady = undefined; throw error })
   return schemaReady
 }
@@ -126,8 +133,8 @@ function address(value, name) {
   try { return new PublicKey(value) } catch { throw new Error(`Invalid ${name} address`) }
 }
 
-function amountUnits(amount, currency) {
-  const decimals = currency === 'SOL' ? 9 : 6
+function amountUnits(amount, currency, tokenDecimals) {
+  const decimals = currency === 'SOL' ? 9 : currency === 'SPL' ? tokenDecimals : 6
   const numeric = Number(amount)
   if (!Number.isFinite(numeric) || numeric <= 0) throw new Error('Amount must be a positive number')
   const units = Math.round(numeric * 10 ** decimals)
@@ -137,12 +144,27 @@ function amountUnits(amount, currency) {
 
 function validateVoucher(body) {
   const sender = address(body.senderAddress, 'sender')
-  if (!['SOL', 'USDC'].includes(body.currency)) throw new Error('Currency must be SOL or USDC')
-  const divisor = body.currency === 'SOL' ? 1e9 : 1e6
-  const amount = Number(amountUnits(body.amount, body.currency)) / divisor
+  if (!['SOL', 'USDC', 'SPL'].includes(body.currency)) throw new Error('Unsupported gift currency')
+  const tokenMint = body.currency === 'SPL' ? address(body.tokenMint, 'token mint').toBase58() : null
+  const tokenDecimals = body.currency === 'SPL' ? Number(body.tokenDecimals) : null
+  if (body.currency === 'SPL' && (!Number.isInteger(tokenDecimals) || tokenDecimals < 0 || tokenDecimals > 9 || body.onchain !== true)) {
+    throw new Error('SPL gifts require an on-chain classic SPL mint with 0–9 decimals')
+  }
+  const decimals = body.currency === 'SOL' ? 9 : body.currency === 'SPL' ? tokenDecimals : 6
+  const amount = Number(amountUnits(body.amount, body.currency, tokenDecimals)) / 10 ** decimals
   if (!templates.has(body.templateId)) throw new Error('Unknown templateId')
   if (typeof body.message !== 'string' || body.message.length > 120) throw new Error('Message must be 120 characters or fewer')
-  return { senderAddress: sender.toBase58(), amount, currency: body.currency, templateId: body.templateId, message: body.message }
+  return { senderAddress: sender.toBase58(), amount, currency: body.currency, tokenMint, tokenDecimals, templateId: body.templateId, message: body.message }
+}
+
+async function validateSplMint(mintAddress) {
+  const mintKey = address(mintAddress, 'token mint')
+  const mintInfo = await solana().getAccountInfo(mintKey, 'confirmed')
+  if (!mintInfo?.owner.equals(TOKEN_PROGRAM_ID)) throw new Error('Поддерживаются только обычные токены Solana SPL, не Token-2022')
+  const mint = await getMint(solana(), mintKey, 'confirmed', TOKEN_PROGRAM_ID)
+  if (mint.decimals > 9) throw new Error('Для этого сервиса поддерживаются SPL-токены с количеством знаков после запятой до 9')
+  if (mint.freezeAuthority) throw new Error('Этот токен может замораживать счета; для безопасности такие токены не принимаются')
+  return { mint: mintKey, decimals: mint.decimals }
 }
 
 async function verifyVoucherSecretPhrase(voucher, secretWord) {
@@ -163,6 +185,10 @@ async function prepare(body) {
   requireDevnet()
   await ensureSchema()
   const voucher = validateVoucher(body)
+  if (voucher.currency === 'SPL') {
+    const mint = await validateSplMint(voucher.tokenMint)
+    if (mint.decimals !== voucher.tokenDecimals) throw new Error('Количество знаков токена не совпадает с данными сети')
+  }
   const secretWord = await createSecretWordVerifier(body.secretWord, createHmac('sha256', masterKey()).update('solgift:secret-word-pepper:v1').digest())
   const onchain = body.onchain === true
   const escrowSecret = onchain ? randomBytes(32) : Buffer.from(Keypair.generate().secretKey)
@@ -174,10 +200,11 @@ async function prepare(body) {
   await sql()`DELETE FROM escrow_vouchers WHERE status = 'prepared' AND created_at < now() - interval '2 hours'`
   await sql()`INSERT INTO escrow_vouchers
     (voucher_id, sender_address, amount, currency, template_id, message, escrow_address, escrow_secret,
-      secret_word_salt, secret_word_hash, status, onchain, gift_hash)
+      secret_word_salt, secret_word_hash, status, onchain, gift_hash, token_mint, token_decimals)
     VALUES (${voucherId}, ${voucher.senderAddress}, ${voucher.amount}, ${voucher.currency}, ${voucher.templateId},
       ${voucher.message}, ${escrowAddress}, ${encryptSecret(escrowSecret)},
-      ${secretWord.salt}, ${secretWord.verifier}, 'prepared', ${onchain}, ${giftHash ? giftHash.toString('base64url') : null})`
+      ${secretWord.salt}, ${secretWord.verifier}, 'prepared', ${onchain}, ${giftHash ? giftHash.toString('base64url') : null},
+      ${voucher.tokenMint}, ${voucher.tokenDecimals})`
   const expiresAt = Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60
   return { escrowAddress, voucherId, giftHash: giftHash?.toString('base64url'), expiresAt, onchain }
 }
@@ -190,8 +217,9 @@ async function verifyOnchainFunding(voucher, txHash) {
   if (expectedGift !== voucher.escrow_address) throw new Error('Gift PDA does not match the prepared gift')
   const signer = tx.transaction.message.accountKeys.some((key) => key.pubkey.toBase58() === voucher.sender_address && key.signer)
   if (!signer) throw new Error('Transaction was not signed by senderAddress')
-  const expectedDiscriminator = voucher.currency === 'SOL' ? CREATE_SOL_DISCRIMINATOR : CREATE_USDC_DISCRIMINATOR
-  const expectedAmount = amountUnits(voucher.amount, voucher.currency)
+  const expectedDiscriminator = voucher.currency === 'SOL' ? CREATE_SOL_DISCRIMINATOR
+    : voucher.currency === 'USDC' ? CREATE_USDC_DISCRIMINATOR : CREATE_SPL_DISCRIMINATOR
+  const expectedAmount = amountUnits(voucher.amount, voucher.currency, Number(voucher.token_decimals))
   const instruction = tx.transaction.message.instructions.find((item) => item.programId?.equals(SOLGIFT_PROGRAM_ID)
     && item.accounts?.some((account) => account.equals(new PublicKey(expectedGift))))
   if (!instruction) throw new Error('Transaction does not contain the Solgift program instruction')
@@ -203,7 +231,8 @@ async function verifyOnchainFunding(voucher, txHash) {
   }
   const gift = decodeGiftAccount(await solana().getAccountInfo(new PublicKey(expectedGift), 'confirmed'))
   if (!gift.giftHash.equals(giftHash) || gift.creator.toBase58() !== voucher.sender_address
-      || gift.asset !== voucher.currency || gift.amount !== expectedAmount || gift.status !== 'active') {
+      || gift.asset !== voucher.currency || gift.amount !== expectedAmount || gift.status !== 'active'
+      || (voucher.currency === 'SPL' && gift.mint.toBase58() !== voucher.token_mint)) {
     throw new Error('On-chain gift account does not match the prepared voucher')
   }
 }
@@ -293,11 +322,12 @@ async function registerOnchainGift(body, { requireSecretPhrase }) {
   if (typeof body.txHash !== 'string' || body.txHash.length < 64 || body.txHash.length > 100) throw new Error('Invalid txHash')
   if (requireSecretPhrase && typeof body.secretWord !== 'string') throw new Error('Secret word is required')
   const sender = address(body.senderAddress, 'sender').toBase58()
-  const alreadyRegistered = await sql()`SELECT voucher_id, amount, currency, template_id, message
+  const alreadyRegistered = await sql()`SELECT voucher_id, amount, currency, token_mint, token_decimals, template_id, message
     FROM escrow_vouchers WHERE tx_hash = ${body.txHash} LIMIT 1`
   if (alreadyRegistered.length) return {
     voucherId: alreadyRegistered[0].voucher_id, amount: Number(alreadyRegistered[0].amount),
     currency: alreadyRegistered[0].currency, templateId: alreadyRegistered[0].template_id,
+    tokenMint: alreadyRegistered[0].token_mint || undefined, tokenDecimals: alreadyRegistered[0].token_decimals ?? undefined,
     message: alreadyRegistered[0].message,
   }
   const transaction = await solana().getParsedTransaction(body.txHash, { commitment: 'confirmed', maxSupportedTransactionVersion: 0 })
@@ -309,6 +339,7 @@ async function registerOnchainGift(body, { requireSecretPhrase }) {
   const data = Buffer.from(bs58.decode(instruction.data))
   const isCreateInstruction = data.subarray(0, 8).equals(CREATE_SOL_DISCRIMINATOR)
     || data.subarray(0, 8).equals(CREATE_USDC_DISCRIMINATOR)
+    || data.subarray(0, 8).equals(CREATE_SPL_DISCRIMINATOR)
   if (!isCreateInstruction || data.length < 48) throw new Error('Transaction is not a valid gift creation')
   const giftHash = data.subarray(8, 40)
   const escrowAddress = giftAddress(sender, giftHash)
@@ -316,11 +347,11 @@ async function registerOnchainGift(body, { requireSecretPhrase }) {
     throw new Error('Gift account does not match the confirmed transaction')
   }
   const candidates = body.voucherId
-    ? await sql()`SELECT voucher_id, sender_address, amount, currency, template_id, message,
+    ? await sql()`SELECT voucher_id, sender_address, amount, currency, token_mint, token_decimals, template_id, message,
         escrow_address, onchain, gift_hash, secret_word_salt, secret_word_hash
       FROM escrow_vouchers WHERE voucher_id = ${body.voucherId} AND status = 'prepared' AND onchain = true
         AND sender_address = ${sender} AND escrow_address = ${escrowAddress.toBase58()} LIMIT 1`
-    : await sql()`SELECT voucher_id, sender_address, amount, currency, template_id, message,
+    : await sql()`SELECT voucher_id, sender_address, amount, currency, token_mint, token_decimals, template_id, message,
         escrow_address, onchain, gift_hash, secret_word_salt, secret_word_hash
       FROM escrow_vouchers WHERE status = 'prepared' AND onchain = true
         AND sender_address = ${sender} AND escrow_address = ${escrowAddress.toBase58()} LIMIT 1`
@@ -337,6 +368,7 @@ async function registerOnchainGift(body, { requireSecretPhrase }) {
   return {
     status: 'success',
     voucherId: voucher.voucher_id, amount: Number(voucher.amount), currency: voucher.currency,
+    tokenMint: voucher.token_mint || undefined, tokenDecimals: voucher.token_decimals ?? undefined,
     templateId: voucher.template_id, message: voucher.message,
   }
 }
@@ -349,7 +381,7 @@ async function recover(body) {
 
 async function details(id) {
   await ensureSchema()
-  const rows = await sql()`SELECT voucher_id, sender_address, amount, currency, template_id, message, status, onchain, gift_hash, escrow_address
+  const rows = await sql()`SELECT voucher_id, sender_address, amount, currency, token_mint, token_decimals, template_id, message, status, onchain, gift_hash, escrow_address
     FROM escrow_vouchers WHERE voucher_id = ${id} AND status IN ('active', 'claim_preparing', 'claiming', 'claimed') LIMIT 1`
   if (!rows.length) throw new Error('Voucher not found')
   const voucher = rows[0]
@@ -357,10 +389,15 @@ async function details(id) {
   let giftInfo
   if (voucher.onchain) {
     giftInfo = decodeGiftAccount(await solana().getAccountInfo(new PublicKey(voucher.escrow_address), 'confirmed'))
+    if (giftInfo.asset !== voucher.currency
+        || (voucher.currency === 'SPL' && giftInfo.mint.toBase58() !== voucher.token_mint)) {
+      throw new Error('Stored voucher data does not match the on-chain token mint')
+    }
     status = giftInfo.status === 'active' && giftInfo.expiresAt <= Math.floor(Date.now() / 1000) ? 'expired' : giftInfo.status
   }
   return {
     voucherId: voucher.voucher_id, amount: Number(voucher.amount), currency: voucher.currency,
+    tokenMint: voucher.token_mint || undefined, tokenDecimals: voucher.token_decimals ?? undefined,
     templateId: voucher.template_id, message: voucher.message, senderAddress: voucher.sender_address,
     giftAddress: voucher.onchain ? voucher.escrow_address : undefined,
     giftHash: voucher.onchain ? voucher.gift_hash : undefined,
@@ -495,6 +532,10 @@ async function claim(body) {
   await verifyVoucherSecretPhrase(voucher, body.secretWord)
   if (voucher.onchain) {
     const gift = decodeGiftAccount(await solana().getAccountInfo(new PublicKey(voucher.escrow_address), 'confirmed'))
+    if (gift.asset !== voucher.currency
+        || (voucher.currency === 'SPL' && gift.mint.toBase58() !== voucher.token_mint)) {
+      throw new Error('Stored voucher data does not match the on-chain token mint')
+    }
     if (gift.status !== 'active' || gift.expiresAt <= Math.floor(Date.now() / 1000)) throw new Error('Voucher is no longer claimable')
     return { onchain: true, giftSecret: decryptSecret(voucher.escrow_secret).toString('base64url') }
   }
@@ -588,7 +629,7 @@ export default async function handler(request, response) {
       : /secret word is incorrect/i.test(message) ? 401
       : /not found/i.test(message) ? 404
       : /already|in progress|claimable|reserved|predates secret-word/i.test(message) ? 409
-        : /^(Invalid |Amount |Currency |Unknown |Message |Secret phrase|Secret word is required|Transaction |Funding transaction |No matching |Voucher )/.test(message) ? 400 : 500
+      : /^(Invalid |Amount |Currency |Unsupported |SPL gifts |Token-2022 |Unknown |Message |Secret phrase|Secret word is required|Transaction |Funding transaction |No matching |Voucher |Поддерживаются |Для этого сервиса |Этот токен |Количество знаков)/.test(message) ? 400 : 500
     return send(response, status, { status: 'error', message }, routeOrigin)
   }
 }

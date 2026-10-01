@@ -3,6 +3,7 @@ import { AnimatePresence, motion, useMotionValue, useSpring, useTransform } from
 import { useConnection, useWallet } from '@solana/wallet-adapter-react'
 import { useWalletModal } from '@solana/wallet-adapter-react-ui'
 import { LAMPORTS_PER_SOL, PublicKey, Transaction } from '@solana/web3.js'
+import { getMint, TOKEN_PROGRAM_ID } from '@solana/spl-token'
 import { claimGiftInstruction, createGiftInstruction, decodeBase64Url, SOLGIFT_PROGRAM_ID, USDC_DEVNET_MINT } from './solgift-program.js'
 import {
   ArrowDown, ArrowRight, ArrowUpRight, Check, ChevronDown, Copy, Gift,
@@ -10,6 +11,7 @@ import {
 } from 'lucide-react'
 
 const VOUCHER_API = import.meta.env.VITE_VOUCHER_API_URL || (import.meta.env.PROD ? window.location.origin : '')
+const CLASSIC_SPL_ENABLED = import.meta.env.VITE_ENABLE_CLASSIC_SPL === 'true'
 
 async function voucherApi(path, body) {
   if (!VOUCHER_API) throw new Error('Сервис ваучеров не настроен. Попробуй позже.')
@@ -66,6 +68,8 @@ const initialVoucher = {
   currency: 'SOL',
   amount: '0.25',
   message: 'Пусть этот год будет ярким ✨',
+  tokenMint: '',
+  tokenDecimals: null,
   link: 'https://solgift.app/g/sol-7Kp9xQ',
 }
 
@@ -75,10 +79,20 @@ const slideVariants = {
   exit: { opacity: 0, y: -12, filter: 'blur(4px)', transition: { duration: 0.18 } },
 }
 
-function formatAmount(amount, currency) {
+function currencyLabel(voucher) {
+  if (voucher.currency !== 'SPL') return voucher.currency
+  const mint = voucher.tokenMint || ''
+  return `SPL · ${mint ? `${mint.slice(0, 4)}…${mint.slice(-4)}` : 'токен'}`
+}
+
+function currencyDecimals(voucher) {
+  return voucher.currency === 'SOL' ? 9 : voucher.currency === 'SPL' ? (voucher.tokenDecimals ?? 0) : 6
+}
+
+function formatAmount(amount, currency, decimals) {
   const number = Number(amount)
   if (!Number.isFinite(number)) return `0 ${currency}`
-  return `${new Intl.NumberFormat('ru-RU', { maximumFractionDigits: currency === 'SOL' ? 4 : 2 }).format(number)} ${currency}`
+  return `${new Intl.NumberFormat('ru-RU', { maximumFractionDigits: decimals ?? (currency === 'SOL' ? 4 : 2) }).format(number)} ${currency}`
 }
 
 function tokenAmount(transaction, address, mint, phase) {
@@ -387,7 +401,7 @@ function FloatingVoucher({ voucher }) {
             </div>
             <div className="voucher-bottomline">
               <div><span className="voucher-eyebrow">ДЛЯ ТЕБЯ</span><h3>{voucher.template.title}</h3></div>
-              <div className="voucher-amount"><span>{voucher.amount || '0.25'}</span><small>{voucher.currency}</small></div>
+                <div className="voucher-amount"><span>{voucher.amount || '0.25'}</span><small>{currencyLabel(voucher)}</small></div>
             </div>
             <span className="card-corner-glow" />
           </div>
@@ -459,6 +473,8 @@ function CreatePage({ voucher, setVoucher, onGenerated, onToast }) {
   const [secretWordConfirm, setSecretWordConfirm] = useState('')
   const [recoveryOpen, setRecoveryOpen] = useState(false)
   const [recoverySignature, setRecoverySignature] = useState('')
+  const [splMintDraft, setSplMintDraft] = useState(voucher.tokenMint || '')
+  const [splMintStatus, setSplMintStatus] = useState('')
   const [pendingRegistration, setPendingRegistration] = useState(() => {
     try {
       const stored = JSON.parse(sessionStorage.getItem('solgift:pending-registration:v1') || 'null')
@@ -479,6 +495,21 @@ function CreatePage({ voucher, setVoucher, onGenerated, onToast }) {
   }, [pendingRegistration])
   const { connection } = useConnection()
   const { publicKey, sendTransaction } = useWallet()
+
+  async function verifySplMint() {
+    try {
+      const mintKey = new PublicKey(splMintDraft.trim())
+      const mint = await getMint(connection, mintKey, 'confirmed', TOKEN_PROGRAM_ID)
+      if (mint.decimals > 9) throw new Error('Поддерживаются токены максимум с 9 знаками после запятой')
+      if (mint.freezeAuthority) throw new Error('У этого токена есть право замораживать счета, поэтому он не поддерживается')
+      setVoucher((current) => ({ ...current, currency: 'SPL', tokenMint: mintKey.toBase58(), tokenDecimals: mint.decimals }))
+      setSplMintDraft(mintKey.toBase58())
+      setSplMintStatus(`Проверен classic SPL · ${mint.decimals} знаков · без права заморозки`)
+    } catch (error) {
+      setVoucher((current) => ({ ...current, tokenMint: '', tokenDecimals: null }))
+      setSplMintStatus(error.message || 'Не удалось проверить mint. Нужен адрес classic SPL-токена в Devnet.')
+    }
+  }
 
   function update(key, value) { setVoucher((current) => ({ ...current, [key]: value })) }
 
@@ -581,8 +612,12 @@ function CreatePage({ voucher, setVoucher, onGenerated, onToast }) {
     let signature
     try {
       onToast({ type: 'sent', message: 'Загрузка... Подготавливаем escrow' })
+      if (voucher.currency === 'SPL' && (!voucher.tokenMint || !Number.isInteger(voucher.tokenDecimals))) {
+        throw new Error('Введи и проверь адрес SPL-токена перед созданием подарка')
+      }
       const preparation = await voucherApi('/api/escrow/prepare', {
         senderAddress: publicKey.toBase58(), currency: voucher.currency,
+        tokenMint: voucher.tokenMint, tokenDecimals: voucher.tokenDecimals,
         amount: Number(voucher.amount), templateId: voucher.template.id, message: voucher.message,
         secretWord, onchain: true,
       })
@@ -590,12 +625,13 @@ function CreatePage({ voucher, setVoucher, onGenerated, onToast }) {
         throw new Error('API не подготовил on-chain подарок; средства не отправлены')
       }
       const transaction = new Transaction()
-      const decimals = voucher.currency === 'SOL' ? 9 : 6
+      const decimals = currencyDecimals(voucher)
       const amount = BigInt(Math.round(Number(voucher.amount) * 10 ** decimals))
       if (amount <= 0n) throw new Error('Укажи корректную сумму подарка')
       transaction.add(await createGiftInstruction({
         creator: publicKey, giftAddress: preparation.escrowAddress,
         giftHash: decodeBase64Url(preparation.giftHash), currency: voucher.currency,
+        tokenMint: voucher.tokenMint,
         amount, expiresAt: preparation.expiresAt,
       }))
       const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed')
@@ -614,7 +650,8 @@ function CreatePage({ voucher, setVoucher, onGenerated, onToast }) {
       const pending = {
         request: {
           voucherId: preparation.voucherId, senderAddress: publicKey.toBase58(), amount: Number(voucher.amount),
-          currency: voucher.currency, templateId: voucher.template.id, message: voucher.message, txHash: signature,
+          currency: voucher.currency, tokenMint: voucher.tokenMint, tokenDecimals: voucher.tokenDecimals,
+          templateId: voucher.template.id, message: voucher.message, txHash: signature,
         },
         voucher: { ...voucher }, secretWord,
       }
@@ -664,17 +701,22 @@ function CreatePage({ voucher, setVoucher, onGenerated, onToast }) {
             <div className="form-heading"><span className="form-step">02</span><div><h2>Добавь ценность</h2><p>Выбери токен и сумму подарка.</p></div></div>
             <div className="field-label-row"><label>Валюта подарка</label><span className="field-note"><ShieldCheck size={13} /> Комиссия сети оплачивается отдельно</span></div>
             <div className="currency-switch" role="group" aria-label="Валюта подарка">
-              {['SOL', 'USDC'].map((coin) => (
+              {['SOL', 'USDC', ...(CLASSIC_SPL_ENABLED ? ['SPL'] : [])].map((coin) => (
                 <button key={coin} className={`currency-option ${voucher.currency === coin ? 'currency-selected' : ''}`} onClick={() => update('currency', coin)}>
-                  {coin === 'SOL' ? <SolMark small /> : <span className="usdc-mark">$</span>}
-                  <span>{coin}</span><small>{coin === 'SOL' ? 'Solana' : 'USD Coin'}</small>
+                  {coin === 'SOL' ? <SolMark small /> : coin === 'USDC' ? <span className="usdc-mark">$</span> : <span className="usdc-mark">S</span>}
+                  <span>{coin}</span><small>{coin === 'SOL' ? 'Solana' : coin === 'USDC' ? 'USD Coin' : 'Classic SPL token'}</small>
                   {voucher.currency === coin && <span className="currency-check"><Check size={11} /></span>}
                 </button>
               ))}
             </div>
+            {voucher.currency === 'SPL' && <div className="spl-mint-field">
+              <label className="input-label" htmlFor="spl-token-mint">Адрес токена (mint)</label>
+              <div className="amount-input-wrap"><input id="spl-token-mint" value={splMintDraft} onChange={(event) => { setSplMintDraft(event.target.value); setSplMintStatus(''); setVoucher((current) => ({ ...current, tokenMint: '', tokenDecimals: null })) }} placeholder="Вставь адрес mint в Devnet" autoComplete="off" spellCheck="false" /><button type="button" onClick={verifySplMint} disabled={!splMintDraft.trim() || isApiLoading}>Проверить</button></div>
+              <div className="amount-hint"><span>{splMintStatus || 'Только classic SPL, до 9 знаков, без права заморозки'}</span></div>
+            </div>}
             <label className="input-label" htmlFor="gift-amount">Сумма</label>
-            <div className="amount-input-wrap"><input id="gift-amount" type="number" min="0.01" step={voucher.currency === 'SOL' ? '0.01' : '1'} value={voucher.amount} onChange={(event) => update('amount', event.target.value)} placeholder="0.25"/><span className="amount-unit">{voucher.currency}</span><ChevronDown size={15} /></div>
-            <div className="amount-hint"><span>Минимальная сумма</span><span>{voucher.currency === 'SOL' ? '0.01 SOL' : '1 USDC'}</span></div>
+            <div className="amount-input-wrap"><input id="gift-amount" type="number" min="0.000000001" step={voucher.currency === 'SOL' ? '0.01' : voucher.currency === 'SPL' ? (10 ** -(voucher.tokenDecimals ?? 0)) : '1'} value={voucher.amount} onChange={(event) => update('amount', event.target.value)} placeholder="0.25"/><span className="amount-unit">{currencyLabel(voucher)}</span><ChevronDown size={15} /></div>
+            <div className="amount-hint"><span>Сеть: Devnet</span><span>{voucher.currency === 'SOL' ? '0.01 SOL' : voucher.currency === 'USDC' ? '1 USDC' : `до ${voucher.tokenDecimals ?? 9} знаков`}</span></div>
           </div>
 
           <div className="form-separator" />
@@ -700,8 +742,9 @@ function CreatePage({ voucher, setVoucher, onGenerated, onToast }) {
 
           <div className="form-footer">
             <p className="devnet-note">Сайт работает в Solana Devnet. В настройках Solflare или Phantom включи «Тестовая сеть» и выбери «Solana Devnet», иначе кошелёк может не суметь проверить транзакцию.</p>
+            <p className="program-transparency">При создании подписывается перевод выбранного токена в escrow. Сайт не запрашивает разрешение на будущие списания. <a href="https://solscan.io/account/A5cFtpUVnBncPqaBpUjHUtb9brk3qoPZSUjRdD3DTht2?cluster=devnet" target="_blank" rel="noreferrer">Программа в Solscan</a> · <a href="https://github.com/janbakutov0812-afk/solana-gift-vouchers" target="_blank" rel="noreferrer">исходный код</a>.</p>
             <div className="secure-note"><LockKeyhole size={14} /><span>Приватный ключ остаётся у тебя</span></div>
-            <Button onClick={generate} className="generate-button" disabled={isApiLoading || !Number(voucher.amount) || Number(voucher.amount) <= 0 || [...secretWord.trim()].length < 12 || secretWord !== secretWordConfirm}>
+            <Button onClick={generate} className="generate-button" disabled={isApiLoading || !Number(voucher.amount) || Number(voucher.amount) <= 0 || (voucher.currency === 'SPL' && (!voucher.tokenMint || !Number.isInteger(voucher.tokenDecimals))) || [...secretWord.trim()].length < 12 || secretWord !== secretWordConfirm}>
               {isApiLoading ? <><span className="spinner" /> Создаём открытку...</> : <>Сгенерировать ссылку <ArrowRight size={16} className="button-arrow" /></>}
             </Button>
           </div>
@@ -730,11 +773,11 @@ function CreatePage({ voucher, setVoucher, onGenerated, onToast }) {
             <div className={`preview-card card-${voucher.template.style}`}>
               <div className="preview-card-top"><span>ПОДАРОЧНАЯ ОТКРЫТКА</span><Sparkles size={14} /></div>
               <div className="preview-center"><div className="preview-circle"><span>{voucher.template.emoji}</span><i>✦</i><b>✳</b></div></div>
-              <div className="preview-card-bottom"><div><span className="voucher-eyebrow">{voucher.template.tag}</span><h3>{voucher.template.title}</h3></div><div className="preview-amount"><span>{voucher.amount || '0.00'}</span><small>{voucher.currency}</small></div></div>
+              <div className="preview-card-bottom"><div><span className="voucher-eyebrow">{voucher.template.tag}</span><h3>{voucher.template.title}</h3></div><div className="preview-amount"><span>{voucher.amount || '0.00'}</span><small>{currencyLabel(voucher)}</small></div></div>
             </div>
             <motion.div className="preview-summary" layout>
-              <span><span className="summary-token">{voucher.currency === 'SOL' ? <SolMark small /> : <span className="usdc-mark mini">$</span>}</span>Подарок получателю</span>
-              <strong>{formatAmount(voucher.amount, voucher.currency)}</strong>
+              <span><span className="summary-token">{voucher.currency === 'SOL' ? <SolMark small /> : <span className="usdc-mark mini">{voucher.currency === 'USDC' ? '$' : 'S'}</span>}</span>Подарок получателю</span>
+              <strong>{formatAmount(voucher.amount, currencyLabel(voucher), currencyDecimals(voucher))}</strong>
             </motion.div>
             <div className="preview-note"><div className="note-icon"><Zap size={14} /></div><p><strong>Момент открытия — твой.</strong><br />Получатель узнает, что внутри, только когда откроет ссылку.</p></div>
             <div className="preview-card-foot"><span>POWERED BY SOLANA</span><span>01 — 04</span></div>
@@ -820,7 +863,7 @@ function ClaimPage({ voucher, onToast, isVoucherLoading = false }) {
         transaction.add(await claimGiftInstruction({
           creator: voucher.senderAddress, giftAddress: voucher.giftAddress,
           giftHash: decodeBase64Url(voucher.giftHash), giftSecret: decodeBase64Url(result.giftSecret),
-          currency: voucher.currency, recipient: publicKey,
+          currency: voucher.currency, tokenMint: voucher.tokenMint, recipient: publicKey,
         }))
         const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed')
         transaction.feePayer = publicKey
@@ -888,9 +931,10 @@ function ClaimPage({ voucher, onToast, isVoucherLoading = false }) {
             <div className={`revealed-art card-${voucher.template.style}`}><span className="revealed-emoji">{voucher.template.emoji}</span><span className="revealed-art-spark">✦</span><span className="revealed-art-dot">✳</span></div>
             <span className="voucher-eyebrow">ТВОЙ ПОДАРОК</span>
             <motion.div className="revealed-amount" initial={{ scale: 0.7, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ delay: 0.18, type: 'spring' }}>
-              <strong>{formatAmount(voucher.amount, voucher.currency).split(' ')[0]}</strong>
-              <span>{voucher.currency === 'SOL' ? <SolMark small /> : <span className="usdc-mark mini">$</span>}{voucher.currency}</span>
+              <strong>{formatAmount(voucher.amount, currencyLabel(voucher), currencyDecimals(voucher)).split(' ')[0]}</strong>
+              <span>{voucher.currency === 'SOL' ? <SolMark small /> : <span className="usdc-mark mini">{voucher.currency === 'USDC' ? '$' : 'S'}</span>}{currencyLabel(voucher)}</span>
             </motion.div>
+            {voucher.currency === 'SPL' && voucher.tokenMint && <a className="token-mint-proof" href={`https://solscan.io/token/${voucher.tokenMint}?cluster=devnet`} target="_blank" rel="noreferrer">Mint: {voucher.tokenMint} · проверить в Solscan</a>}
             <h1>{voucher.template.title}</h1>
             <p className="revealed-message">“{voucher.message || 'Небольшой сюрприз специально для тебя ✨'}”</p>
             <div className="revealed-from"><span className="from-avatar">✳</span><span>С теплом, <strong>твой друг</strong></span><span className="from-dot">·</span><span className="onchain-label"><SolMark small /> on-chain</span></div>
@@ -1040,7 +1084,7 @@ function App() {
         {page === 'create' && <CreatePage key="create" voucher={voucher} setVoucher={setVoucher} onToast={notify} onGenerated={(next, phrase) => { setVoucher(next); setDeliverySecretWord(phrase); setModalOpen(true) }} />}
         {page === 'claim' && <ClaimPage key={`claim-${voucher.voucherId || voucher.link}`} voucher={voucher} onToast={notify} isVoucherLoading={isApiLoading} />}
       </AnimatePresence>
-      <footer className="site-footer"><button className="footer-brand" onClick={() => navigate('home')}><span className="brand-icon small-brand-icon"><Gift size={13} /></span> solgift<span className="brand-dot">.</span></button><span>Маленькие жесты. Большая энергия.</span><span className="footer-right">MADE WITH <span>✳</span> ON SOLANA</span></footer>
+      <footer className="site-footer"><button className="footer-brand" onClick={() => navigate('home')}><span className="brand-icon small-brand-icon"><Gift size={13} /></span> solgift<span className="brand-dot">.</span></button><a className="source-link" href="https://github.com/janbakutov0812-afk/solana-gift-vouchers" target="_blank" rel="noreferrer">Открытый исходный код</a><span>Маленькие жесты. Большая энергия.</span><span className="footer-right">MADE WITH <span>✳</span> ON SOLANA</span></footer>
       <AnimatePresence>{toast && <StatusToast key={`${toast.type}-${toast.message}`} toast={toast} />}</AnimatePresence>
       <AnimatePresence>{modalOpen && <LinkModal voucher={{ ...voucher, secretWord: deliverySecretWord }} onClose={() => { setModalOpen(false); setDeliverySecretWord('') }} onClaim={() => navigate('claim')} />}</AnimatePresence>
     </div>

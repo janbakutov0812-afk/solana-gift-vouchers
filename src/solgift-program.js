@@ -10,6 +10,8 @@ const CREATE_SOL = Buffer.from([16, 218, 222, 28, 15, 37, 11, 18])
 const CREATE_USDC = Buffer.from([29, 42, 92, 142, 183, 189, 95, 31])
 const CLAIM_SOL = Buffer.from([144, 133, 16, 213, 214, 223, 141, 83])
 const CLAIM_USDC = Buffer.from([169, 189, 169, 109, 229, 119, 70, 210])
+const CREATE_SPL = Buffer.from([112, 130, 144, 62, 31, 18, 136, 163])
+const CLAIM_SPL = Buffer.from([108, 231, 225, 44, 145, 38, 243, 100])
 
 export function decodeBase64Url(value) {
   const padded = value.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - value.length % 4) % 4)
@@ -38,7 +40,7 @@ function timestampBuffer(value) {
   return result
 }
 
-export async function createGiftInstruction({ creator, giftAddress, giftHash, currency, amount, expiresAt }) {
+export async function createGiftInstruction({ creator, giftAddress, giftHash, currency, tokenMint, amount, expiresAt }) {
   const creatorKey = new PublicKey(creator)
   const hashBytes = Buffer.from(giftHash)
   const gift = giftPda(creatorKey, hashBytes)
@@ -56,25 +58,27 @@ export async function createGiftInstruction({ creator, giftAddress, giftHash, cu
     })
   }
 
-  const creatorToken = await getAssociatedTokenAddress(USDC_DEVNET_MINT, creatorKey)
-  const vault = await getAssociatedTokenAddress(USDC_DEVNET_MINT, gift, true)
+  const mint = currency === 'USDC' ? USDC_DEVNET_MINT : new PublicKey(tokenMint)
+  const creatorToken = await getAssociatedTokenAddress(mint, creatorKey)
+  const vault = await getAssociatedTokenAddress(mint, gift, true)
+  const discriminator = currency === 'USDC' ? CREATE_USDC : CREATE_SPL
   return new TransactionInstruction({
     programId: SOLGIFT_PROGRAM_ID,
     keys: [
       { pubkey: creatorKey, isSigner: true, isWritable: true },
       { pubkey: gift, isSigner: false, isWritable: true },
-      { pubkey: USDC_DEVNET_MINT, isSigner: false, isWritable: false },
+      { pubkey: mint, isSigner: false, isWritable: false },
       { pubkey: creatorToken, isSigner: false, isWritable: true },
       { pubkey: vault, isSigner: false, isWritable: true },
       { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
       { pubkey: ASSOCIATED_TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
       { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
     ],
-    data: Buffer.concat([CREATE_USDC, hashBytes, amountBuffer(amount), timestampBuffer(expiresAt)]),
+    data: Buffer.concat([discriminator, hashBytes, amountBuffer(amount), timestampBuffer(expiresAt)]),
   })
 }
 
-export async function claimGiftInstruction({ creator, giftAddress, giftHash, giftSecret, currency, recipient }) {
+export async function claimGiftInstruction({ creator, giftAddress, giftHash, giftSecret, currency, tokenMint, recipient }) {
   const creatorKey = new PublicKey(creator)
   const recipientKey = new PublicKey(recipient)
   const gift = new PublicKey(giftAddress)
@@ -89,12 +93,13 @@ export async function claimGiftInstruction({ creator, giftAddress, giftHash, gif
     { pubkey: recipientKey, isSigner: true, isWritable: true },
   ]
   let discriminator = CLAIM_SOL
-  if (currency === 'USDC') {
-    const vault = await getAssociatedTokenAddress(USDC_DEVNET_MINT, gift, true)
-    const recipientToken = await getAssociatedTokenAddress(USDC_DEVNET_MINT, recipientKey)
-    discriminator = CLAIM_USDC
+  if (currency === 'USDC' || currency === 'SPL') {
+    const mint = currency === 'USDC' ? USDC_DEVNET_MINT : new PublicKey(tokenMint)
+    const vault = await getAssociatedTokenAddress(mint, gift, true)
+    const recipientToken = await getAssociatedTokenAddress(mint, recipientKey)
+    discriminator = currency === 'USDC' ? CLAIM_USDC : CLAIM_SPL
     keys.push(
-      { pubkey: USDC_DEVNET_MINT, isSigner: false, isWritable: false },
+      { pubkey: mint, isSigner: false, isWritable: false },
       { pubkey: vault, isSigner: false, isWritable: true },
       { pubkey: recipientToken, isSigner: false, isWritable: true },
       { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },

@@ -103,6 +103,50 @@ pub mod solgift_escrow {
         Ok(())
     }
 
+    /// Creates an escrow for a classic SPL token with at most nine decimals and no freeze authority.
+    pub fn create_spl_gift(
+        ctx: Context<CreateSplGift>,
+        gift_hash: [u8; 32],
+        amount: u64,
+        expires_at: i64,
+    ) -> Result<()> {
+        validate_new_gift(&gift_hash, amount, expires_at)?;
+        validate_spl_mint(&ctx.accounts.mint)?;
+        initialize_gift(
+            &mut ctx.accounts.gift,
+            ctx.accounts.creator.key(),
+            gift_hash,
+            Asset::Spl,
+            ctx.accounts.mint.key(),
+            amount,
+            expires_at,
+            ctx.bumps.gift,
+        )?;
+        token::transfer_checked(
+            CpiContext::new(
+                Token::id(),
+                TransferChecked {
+                    from: ctx.accounts.creator_token.to_account_info(),
+                    mint: ctx.accounts.mint.to_account_info(),
+                    to: ctx.accounts.vault.to_account_info(),
+                    authority: ctx.accounts.creator.to_account_info(),
+                },
+            ),
+            amount,
+            ctx.accounts.mint.decimals,
+        )?;
+        emit!(GiftCreated {
+            gift: ctx.accounts.gift.key(),
+            creator: ctx.accounts.creator.key(),
+            gift_hash,
+            asset: Asset::Spl,
+            mint: ctx.accounts.mint.key(),
+            amount,
+            expires_at,
+        });
+        Ok(())
+    }
+
     /// Lets the first wallet holding the bearer link claim the gift before expiry.
     pub fn claim_sol_gift(
         ctx: Context<ClaimSolGift>,
@@ -180,6 +224,56 @@ pub mod solgift_escrow {
         Ok(())
     }
 
+    /// Transfers a classic SPL gift to the recipient who knows the bearer secret.
+    pub fn claim_spl_gift(
+        ctx: Context<ClaimSplGift>,
+        gift_hash: [u8; 32],
+        gift_secret: [u8; 32],
+    ) -> Result<()> {
+        let now = Clock::get()?.unix_timestamp;
+        let gift = &mut ctx.accounts.gift;
+        validate_secret(gift, &gift_hash, &gift_secret)?;
+        validate_claim(gift, Asset::Spl, now)?;
+        validate_spl_mint(&ctx.accounts.mint)?;
+        require!(
+            ctx.accounts.vault.amount >= gift.amount,
+            EscrowError::InsufficientEscrow
+        );
+        let amount = ctx.accounts.vault.amount;
+        let bump_seed = [gift.bump];
+        let gift_seeds: &[&[u8]] = &[
+            b"gift",
+            ctx.accounts.creator.key.as_ref(),
+            &gift_hash,
+            &bump_seed,
+        ];
+        let signer_seeds = &[gift_seeds];
+        token::transfer_checked(
+            CpiContext::new(
+                Token::id(),
+                TransferChecked {
+                    from: ctx.accounts.vault.to_account_info(),
+                    mint: ctx.accounts.mint.to_account_info(),
+                    to: ctx.accounts.recipient_token.to_account_info(),
+                    authority: gift.to_account_info(),
+                },
+            )
+            .with_signer(signer_seeds),
+            amount,
+            ctx.accounts.mint.decimals,
+        )?;
+        gift.recipient = Some(ctx.accounts.recipient.key());
+        gift.status = GiftStatus::Claimed;
+        emit!(GiftClaimed {
+            gift: gift.key(),
+            recipient: ctx.accounts.recipient.key(),
+            asset: Asset::Spl,
+            mint: ctx.accounts.mint.key(),
+            amount
+        });
+        Ok(())
+    }
+
     /// Returns a SOL gift to its creator only after its expiry timestamp.
     pub fn refund_expired_sol_gift(
         ctx: Context<RefundExpiredSolGift>,
@@ -252,6 +346,53 @@ pub mod solgift_escrow {
         });
         Ok(())
     }
+
+    /// Returns an unclaimed classic SPL gift to its creator after expiry.
+    pub fn refund_expired_spl_gift(
+        ctx: Context<RefundExpiredSplGift>,
+        gift_hash: [u8; 32],
+    ) -> Result<()> {
+        let now = Clock::get()?.unix_timestamp;
+        let gift = &mut ctx.accounts.gift;
+        validate_refund(gift, Asset::Spl, now)?;
+        validate_spl_mint(&ctx.accounts.mint)?;
+        require!(
+            ctx.accounts.vault.amount >= gift.amount,
+            EscrowError::InsufficientEscrow
+        );
+        let amount = ctx.accounts.vault.amount;
+        let bump_seed = [gift.bump];
+        let gift_seeds: &[&[u8]] = &[
+            b"gift",
+            ctx.accounts.creator.key.as_ref(),
+            &gift_hash,
+            &bump_seed,
+        ];
+        let signer_seeds = &[gift_seeds];
+        token::transfer_checked(
+            CpiContext::new(
+                Token::id(),
+                TransferChecked {
+                    from: ctx.accounts.vault.to_account_info(),
+                    mint: ctx.accounts.mint.to_account_info(),
+                    to: ctx.accounts.creator_token.to_account_info(),
+                    authority: gift.to_account_info(),
+                },
+            )
+            .with_signer(signer_seeds),
+            amount,
+            ctx.accounts.mint.decimals,
+        )?;
+        gift.status = GiftStatus::Refunded;
+        emit!(GiftRefunded {
+            gift: gift.key(),
+            creator: ctx.accounts.creator.key(),
+            asset: Asset::Spl,
+            mint: ctx.accounts.mint.key(),
+            amount
+        });
+        Ok(())
+    }
 }
 
 #[derive(Accounts)]
@@ -298,6 +439,23 @@ pub struct CreateUsdcGift<'info> {
         associated_token::authority = gift,
         associated_token::token_program = token_program
     )]
+    pub vault: Account<'info, TokenAccount>,
+    pub token_program: Program<'info, Token>,
+    pub associated_token_program: Program<'info, AssociatedToken>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+#[instruction(gift_hash: [u8; 32])]
+pub struct CreateSplGift<'info> {
+    #[account(mut)]
+    pub creator: Signer<'info>,
+    #[account(init, payer = creator, space = Gift::SPACE, seeds = [b"gift", creator.key().as_ref(), gift_hash.as_ref()], bump)]
+    pub gift: Account<'info, Gift>,
+    pub mint: Account<'info, Mint>,
+    #[account(mut, associated_token::mint = mint, associated_token::authority = creator, associated_token::token_program = token_program)]
+    pub creator_token: Account<'info, TokenAccount>,
+    #[account(init, payer = creator, associated_token::mint = mint, associated_token::authority = gift, associated_token::token_program = token_program)]
     pub vault: Account<'info, TokenAccount>,
     pub token_program: Program<'info, Token>,
     pub associated_token_program: Program<'info, AssociatedToken>,
@@ -358,6 +516,26 @@ pub struct ClaimUsdcGift<'info> {
 }
 
 #[derive(Accounts)]
+#[instruction(gift_hash: [u8; 32], gift_secret: [u8; 32])]
+pub struct ClaimSplGift<'info> {
+    /// CHECK: PDA seed constrained and linked to gift.creator.
+    pub creator: UncheckedAccount<'info>,
+    #[account(mut, seeds = [b"gift", creator.key().as_ref(), gift_hash.as_ref()], bump = gift.bump, has_one = creator)]
+    pub gift: Account<'info, Gift>,
+    #[account(mut)]
+    pub recipient: Signer<'info>,
+    #[account(address = gift.mint)]
+    pub mint: Account<'info, Mint>,
+    #[account(mut, associated_token::mint = mint, associated_token::authority = gift, associated_token::token_program = token_program)]
+    pub vault: Account<'info, TokenAccount>,
+    #[account(init_if_needed, payer = recipient, associated_token::mint = mint, associated_token::authority = recipient, associated_token::token_program = token_program)]
+    pub recipient_token: Account<'info, TokenAccount>,
+    pub token_program: Program<'info, Token>,
+    pub associated_token_program: Program<'info, AssociatedToken>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
 #[instruction(gift_hash: [u8; 32])]
 pub struct RefundExpiredSolGift<'info> {
     #[account(mut)]
@@ -406,15 +584,33 @@ pub struct RefundExpiredUsdcGift<'info> {
     pub system_program: Program<'info, System>,
 }
 
+#[derive(Accounts)]
+#[instruction(gift_hash: [u8; 32])]
+pub struct RefundExpiredSplGift<'info> {
+    #[account(mut)]
+    pub creator: Signer<'info>,
+    #[account(mut, seeds = [b"gift", creator.key().as_ref(), gift_hash.as_ref()], bump = gift.bump, has_one = creator)]
+    pub gift: Account<'info, Gift>,
+    #[account(address = gift.mint)]
+    pub mint: Account<'info, Mint>,
+    #[account(mut, associated_token::mint = mint, associated_token::authority = gift, associated_token::token_program = token_program)]
+    pub vault: Account<'info, TokenAccount>,
+    #[account(init_if_needed, payer = creator, associated_token::mint = mint, associated_token::authority = creator, associated_token::token_program = token_program)]
+    pub creator_token: Account<'info, TokenAccount>,
+    pub token_program: Program<'info, Token>,
+    pub associated_token_program: Program<'info, AssociatedToken>,
+    pub system_program: Program<'info, System>,
+}
+
 #[account]
 pub struct Gift {
     /// SHA-256 of the bearer secret. The secret itself is never stored on-chain.
     pub gift_hash: [u8; 32],
     pub creator: Pubkey,
     pub asset: Asset,
-    /// Default pubkey for SOL gifts; canonical allowlisted mint for USDC gifts.
+    /// Default pubkey for SOL gifts; the exact token mint for token gifts.
     pub mint: Pubkey,
-    /// Lamports for SOL or base units (6 decimals) for USDC.
+    /// Lamports for SOL or base units for the selected token mint.
     pub amount: u64,
     pub expires_at: i64,
     pub created_at: i64,
@@ -432,6 +628,7 @@ impl Gift {
 pub enum Asset {
     Sol,
     Usdc,
+    Spl,
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq)]
@@ -529,6 +726,14 @@ fn validate_usdc_mint(mint: &Account<Mint>) -> Result<()> {
     Ok(())
 }
 
+fn validate_spl_mint(mint: &Account<Mint>) -> Result<()> {
+    require!(
+        mint.decimals <= 9 && mint.freeze_authority.is_none(),
+        EscrowError::UnsupportedMint
+    );
+    Ok(())
+}
+
 fn validate_claim(gift: &Gift, expected_asset: Asset, now: i64) -> Result<()> {
     require!(gift.asset == expected_asset, EscrowError::WrongAsset);
     require!(
@@ -584,7 +789,7 @@ pub enum EscrowError {
     InvalidAmount,
     #[msg("Expiry must be in the future and at most 365 days away")]
     InvalidExpiry,
-    #[msg("The supplied mint is not supported USDC")]
+    #[msg("The supplied token mint is unsupported")]
     UnsupportedMint,
     #[msg("Gift asset does not match this instruction")]
     WrongAsset,

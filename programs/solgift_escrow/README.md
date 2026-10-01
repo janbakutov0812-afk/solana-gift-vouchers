@@ -1,17 +1,20 @@
 # Solgift Escrow program
 
-An Anchor program that replaces the prototype's server-held voucher keypairs with on-chain PDA escrow for native SOL and canonical USDC. The API generates a random 32-byte claim secret, stores it encrypted, and derives the gift hash and PDA. The shared link contains only an opaque voucher ID; the API releases the claim secret after checking the separately shared secret phrase. The program stores only `SHA-256(secret)` and derives the gift PDA from `gift`, creator, and that hash. Anyone who obtains the claim secret can claim before expiry; only the creator can refund after expiry. The preimage is revealed in the claim transaction.
+An Anchor program for on-chain PDA escrow of native SOL, canonical USDC, and classic SPL tokens. The API generates a random 32-byte claim secret, stores it encrypted, and derives the gift hash and PDA. The shared link contains only an opaque voucher ID; the API releases the claim secret after checking the separately shared secret phrase. The program stores only `SHA-256(secret)` and derives the gift PDA from `gift`, creator, and that hash. Anyone who obtains the claim secret can claim before expiry; only the creator can refund after expiry. The preimage is revealed in the claim transaction.
 
 ## Instructions
 
 - `create_sol_gift(gift_hash, amount_lamports, expires_at)` — initialize the state PDA and fund it atomically. The API computes the hash from its random secret; the secret itself is never included in this transaction.
 - `create_usdc_gift(gift_hash, amount, expires_at)` — initialize state and the PDA's USDC associated token account, then fund it atomically.
+- `create_spl_gift(gift_hash, amount, expires_at)` — fund the PDA for a mint owned by the original SPL Token Program, with at most 9 decimals and no freeze authority.
 - `claim_sol_gift(gift_hash, gift_secret)` / `claim_usdc_gift(gift_hash, gift_secret)` — verify the preimage, pay the signing recipient before expiry, and mark the gift claimed in the same transaction.
+- `claim_spl_gift(gift_hash, gift_secret)` — transfer a supported classic SPL token to the recipient and mark the gift claimed atomically.
 - `refund_expired_sol_gift(gift_hash)` / `refund_expired_usdc_gift(gift_hash)` — return escrow to the creator after expiry.
+- `refund_expired_spl_gift(gift_hash)` — return an unclaimed classic SPL gift to the creator after expiry.
 
 `expires_at` must be a future Unix timestamp no more than 365 days after creation. The frontend should default to 30 days and display the refund rule before funding. Claim/refund races are resolved by Solana's account write lock and the active-status check; a failed transfer rolls back the status change.
 
-USDC is restricted to the legacy SPL Token program and the canonical mainnet/devnet USDC mints. Amounts are base units (USDC has 6 decimals). SOL values are lamports. Token recipients' associated token accounts are created if missing; they pay the account rent. Any unsolicited SOL or USDC added to an active escrow is swept to the claimant or refunded creator along with the recorded gift amount.
+USDC is restricted to the canonical mainnet/devnet mints. Other SPL gifts use the legacy SPL Token program, reject mints with a freeze authority, and support up to 9 decimals. Token-2022 and its extensions are not supported. Amounts are base units; SOL values are lamports. Token recipients' associated token accounts are created if missing; the recipient pays the account rent. Any unsolicited tokens added to an active escrow are swept with the recorded gift amount.
 
 ## Build
 
