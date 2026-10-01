@@ -83,7 +83,7 @@ Response:
 { "txHash": "confirmed or submitted Solana transaction signature" }
 ```
 
-The backend must validate the secret word before atomically reserving each eligible voucher, validate the recipient address, submit the payout, and make retries idempotent. Limit attempts per voucher using persistent storage (the current routes allow eight attempts per 15 minutes). The frontend waits for the returned transaction to confirm before displaying “Успешно выплачено”.
+The backend must validate the secret word before atomically reserving each eligible voucher, validate the recipient address, submit the payout, and make retries idempotent. Limit claim attempts per voucher using persistent storage (the current routes allow eight attempts, including valid retries, per voucher per 15 minutes). The frontend waits for the returned transaction to confirm before displaying “Успешно выплачено”.
 
 ## Security and operations
 
