@@ -306,10 +306,7 @@ function CreatePage({ voucher, setVoucher, onGenerated, onToast }) {
       const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed')
       transaction.feePayer = publicKey
       transaction.recentBlockhash = blockhash
-      const simulation = await connection.simulateTransaction(transaction, {
-        commitment: 'confirmed',
-        sigVerify: false,
-      })
+      const simulation = await connection.simulateTransaction(transaction)
       if (simulation.value.err) {
         console.error('Voucher funding simulation failed', simulation.value.err, simulation.value.logs)
         const details = simulation.value.logs?.slice(-3).join(' ')
@@ -504,7 +501,7 @@ function ClaimPage({ voucher, onToast, isVoucherLoading = false }) {
         const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed')
         transaction.feePayer = publicKey
         transaction.recentBlockhash = blockhash
-        const simulation = await connection.simulateTransaction(transaction, { commitment: 'confirmed', sigVerify: false })
+        const simulation = await connection.simulateTransaction(transaction)
         if (simulation.value.err) {
           const details = simulation.value.logs?.slice(-3).join(' ')
           throw new Error(`Предварительная проверка получения не прошла.${details ? ` ${details}` : ''}`)
