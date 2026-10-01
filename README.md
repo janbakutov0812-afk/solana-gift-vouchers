@@ -27,7 +27,7 @@ The sender chooses a design, SOL or USDC, an amount, and a secret phrase. The re
 - Gift preview and recipient screen.
 - Funding transaction preparation through the API, wallet signing, and on-chain confirmation.
 - Voucher lookup by link ID and a claim request through the API.
-- Separate secret phrase required at creation and claim; the API stores a salted scrypt verifier and limits failed attempts.
+- Separate secret phrase required at creation and claim; the API stores a salted scrypt verifier and limits claim attempts.
 
 Voucher creation and claims require the local escrow API to be running. The development API uses temporary custodial signers and devnet only.
 
