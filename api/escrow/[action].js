@@ -280,6 +280,54 @@ async function create(body) {
   throw new Error('Escrow intent has already been used. Call prepare again.')
 }
 
+async function recover(body) {
+  requireDevnet()
+  await ensureSchema()
+  if (typeof body.txHash !== 'string' || body.txHash.length < 64 || body.txHash.length > 100) throw new Error('Invalid txHash')
+  if (typeof body.secretWord !== 'string') throw new Error('Secret word is required')
+  const sender = address(body.senderAddress, 'sender').toBase58()
+  const alreadyRegistered = await sql()`SELECT voucher_id, amount, currency, template_id, message
+    FROM escrow_vouchers WHERE tx_hash = ${body.txHash} LIMIT 1`
+  if (alreadyRegistered.length) return {
+    voucherId: alreadyRegistered[0].voucher_id, amount: Number(alreadyRegistered[0].amount),
+    currency: alreadyRegistered[0].currency, templateId: alreadyRegistered[0].template_id,
+    message: alreadyRegistered[0].message,
+  }
+  const transaction = await solana().getParsedTransaction(body.txHash, { commitment: 'confirmed', maxSupportedTransactionVersion: 0 })
+  if (!transaction || transaction.meta?.err) throw new Error('Funding transaction is not confirmed successfully')
+  const signer = transaction.transaction.message.accountKeys.some((key) => key.pubkey.toBase58() === sender && key.signer)
+  if (!signer) throw new Error('Transaction was not signed by senderAddress')
+  const instruction = transaction.transaction.message.instructions.find((item) => item.programId?.equals(SOLGIFT_PROGRAM_ID))
+  if (!instruction || typeof instruction.data !== 'string') throw new Error('Transaction does not contain the Solgift program instruction')
+  const data = bs58.decode(instruction.data)
+  const isCreateInstruction = data.subarray(0, 8).equals(CREATE_SOL_DISCRIMINATOR)
+    || data.subarray(0, 8).equals(CREATE_USDC_DISCRIMINATOR)
+  if (!isCreateInstruction || data.length < 48) throw new Error('Transaction is not a valid gift creation')
+  const giftHash = data.subarray(8, 40)
+  const escrowAddress = giftAddress(sender, giftHash)
+  if (!instruction.accounts?.some((account) => account.equals(escrowAddress))) {
+    throw new Error('Gift account does not match the confirmed transaction')
+  }
+  const candidates = await sql()`SELECT voucher_id, sender_address, amount, currency, template_id, message,
+      escrow_address, onchain, gift_hash, secret_word_salt, secret_word_hash
+    FROM escrow_vouchers WHERE status = 'prepared' AND onchain = true
+      AND sender_address = ${sender} AND escrow_address = ${escrowAddress.toBase58()} LIMIT 1`
+  const voucher = candidates[0]
+  if (!voucher) throw new Error('No prepared gift matches this transaction. Contact the site operator with the transaction signature.')
+  await verifyVoucherSecretPhrase(voucher, body.secretWord)
+  await verifyOnchainFunding(voucher, body.txHash)
+  const updated = await sql()`UPDATE escrow_vouchers SET tx_hash = ${body.txHash}, status = 'active', funded_at = now()
+    WHERE voucher_id = ${voucher.voucher_id} AND status = 'prepared' AND tx_hash IS NULL RETURNING voucher_id`
+  if (!updated.length) {
+    const retried = await sql()`SELECT voucher_id FROM escrow_vouchers WHERE tx_hash = ${body.txHash} LIMIT 1`
+    if (!retried.length) throw new Error('Gift registration changed while recovery was in progress; retry once.')
+  }
+  return {
+    voucherId: voucher.voucher_id, amount: Number(voucher.amount), currency: voucher.currency,
+    templateId: voucher.template_id, message: voucher.message,
+  }
+}
+
 async function details(id) {
   await ensureSchema()
   const rows = await sql()`SELECT voucher_id, sender_address, amount, currency, template_id, message, status, onchain, gift_hash, escrow_address
@@ -504,6 +552,7 @@ export default async function handler(request, response) {
     }
     if (request.method === 'POST' && action === 'prepare') return send(response, 200, await prepare(request.body || {}), routeOrigin)
     if (request.method === 'POST' && action === 'create') return send(response, 200, await create(request.body || {}), routeOrigin)
+    if (request.method === 'POST' && action === 'recover') return send(response, 200, await recover(request.body || {}), routeOrigin)
     if (request.method === 'GET' && action === 'details') {
       const id = typeof request.query?.id === 'string' ? request.query.id : ''
       if (!/^escrow_[A-Za-z0-9_-]{1,64}$/.test(id)) return send(response, 400, { message: 'Invalid voucher ID' }, routeOrigin)

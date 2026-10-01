@@ -457,6 +457,8 @@ function CreatePage({ voucher, setVoucher, onGenerated, onToast }) {
   const [isApiLoading, setIsApiLoading] = useState(false)
   const [secretWord, setSecretWord] = useState('')
   const [secretWordConfirm, setSecretWordConfirm] = useState('')
+  const [recoveryOpen, setRecoveryOpen] = useState(false)
+  const [recoverySignature, setRecoverySignature] = useState('')
   const [pendingRegistration, setPendingRegistration] = useState(() => {
     try {
       const stored = JSON.parse(sessionStorage.getItem('solgift:pending-registration:v1') || 'null')
@@ -515,6 +517,41 @@ function CreatePage({ voucher, setVoucher, onGenerated, onToast }) {
       await registerConfirmedVoucher({ ...pendingRegistration, secretWord })
     } catch (error) {
       onToast({ type: 'error', message: `Платёж уже подтверждён. Регистрация пока не прошла: ${error.message}. Не отправляй платёж повторно. Подпись: ${pendingRegistration.request.txHash}` })
+    } finally { setIsApiLoading(false) }
+  }
+
+  async function recoverConfirmedTransfer() {
+    if (!publicKey) {
+      onToast({ type: 'error', message: 'Подключи кошелёк, с которого отправлялся подарок' })
+      return
+    }
+    if (recoverySignature.trim().length < 64) {
+      onToast({ type: 'error', message: 'Вставь подпись подтверждённой транзакции из Solscan' })
+      return
+    }
+    if ([...secretWord.trim()].length < 12) {
+      onToast({ type: 'error', message: 'Введи исходную секретную фразу от этого подарка' })
+      return
+    }
+    setIsApiLoading(true)
+    try {
+      const result = await voucherApi('/api/escrow/recover', {
+        senderAddress: publicKey.toBase58(), txHash: recoverySignature.trim(), secretWord,
+      })
+      const template = templates.find((item) => item.id === result.templateId) || templates[0]
+      const link = new URL(window.location.href)
+      link.search = ''
+      link.searchParams.set('id', result.voucherId)
+      const next = {
+        ...voucher, ...result, template, amount: String(result.amount),
+        link: link.toString(), signature: recoverySignature.trim(), status: 'active',
+      }
+      setVoucher(next)
+      setPendingRegistration(null)
+      onGenerated(next, secretWord)
+      onToast({ type: 'success', message: 'Подарок зарегистрирован, теперь можно отправить ссылку' })
+    } catch (error) {
+      onToast({ type: 'error', message: `Не удалось завершить регистрацию подтверждённого перевода: ${error.message}. Деньги повторно не отправляй. Подпись: ${recoverySignature.trim()}` })
     } finally { setIsApiLoading(false) }
   }
 
@@ -672,6 +709,19 @@ function CreatePage({ voucher, setVoucher, onGenerated, onToast }) {
             <p>Платёж подтверждён, но сервис не завершил регистрацию. Не отправляй деньги повторно. Введи ту же секретную фразу, что задавал при оплате, и повтори регистрацию.</p>
             <button type="button" onClick={retryRegistration} disabled={isApiLoading || [...secretWord.trim()].length < 12}>{isApiLoading ? 'Повторяем регистрацию…' : 'Повторить регистрацию подарка'}</button>
           </div>}
+          <div className="manual-recovery">
+            <button type="button" className="manual-recovery-toggle" aria-expanded={recoveryOpen} onClick={() => setRecoveryOpen((value) => !value)}>
+              Уже отправил перевод, но ссылка не появилась?
+            </button>
+            {recoveryOpen && <div className="manual-recovery-panel">
+              <p>Не отправляй деньги повторно. Подключи тот же кошелёк, введи исходную секретную фразу и вставь подпись операции из истории Solscan.</p>
+              <label className="input-label" htmlFor="recovery-signature">Подпись транзакции</label>
+              <input id="recovery-signature" className="recovery-signature-input" value={recoverySignature} onChange={(event) => setRecoverySignature(event.target.value.trim())} placeholder="Подпись из Solscan" autoComplete="off" />
+              <button type="button" onClick={recoverConfirmedTransfer} disabled={isApiLoading || recoverySignature.trim().length < 64 || [...secretWord.trim()].length < 12}>
+                {isApiLoading ? 'Проверяем перевод…' : 'Завершить регистрацию подарка'}
+              </button>
+            </div>}
+          </div>
         </section>
 
         <aside className="preview-column">

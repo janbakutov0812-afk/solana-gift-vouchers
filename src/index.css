@@ -267,6 +267,13 @@ textarea::placeholder { color: #595963; }
 .registration-recovery p { margin: 0; color: #f2c49c; font-size: 10px; line-height: 1.55; }
 .registration-recovery button { justify-self: start; padding: 8px 10px; color: #ffe0c1; border: 1px solid rgba(255,179,99,.28); border-radius: 8px; background: rgba(255,163,91,.1); font-size: 10px; font-weight: 650; cursor: pointer; }
 .registration-recovery button:disabled { opacity: .6; cursor: wait; }
+.manual-recovery { margin-top: 12px; }
+.manual-recovery-toggle { padding: 5px 0; color: #aab6bd; border: 0; background: transparent; text-align: left; font-size: 10px; text-decoration: underline; text-decoration-color: rgba(170,182,189,.35); cursor: pointer; }
+.manual-recovery-panel { display: grid; gap: 8px; margin-top: 8px; padding: 12px; border: 1px solid rgba(255,255,255,.1); border-radius: 11px; background: rgba(255,255,255,.025); }
+.manual-recovery-panel p { margin: 0 0 2px; color: #aab6bd; font-size: 10px; line-height: 1.6; }
+.recovery-signature-input { min-width: 0; padding: 10px; color: #e7efeb; border: 1px solid rgba(255,255,255,.12); border-radius: 8px; background: rgba(0,0,0,.2); font: 9px 'DM Mono', monospace; }
+.manual-recovery-panel > button { justify-self: start; padding: 8px 10px; color: #d3ffeb; border: 1px solid rgba(20,241,149,.22); border-radius: 8px; background: rgba(20,241,149,.08); font-size: 10px; font-weight: 650; cursor: pointer; }
+.manual-recovery-panel > button:disabled { opacity: .5; cursor: not-allowed; }
 .spinner { width: 14px; height: 14px; border-radius: 50%; border: 2px solid rgba(7,17,12,.25); border-top-color: #08110d; animation: spin .65s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .preview-column { min-width: 0; }
