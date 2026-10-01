@@ -23,6 +23,33 @@ async function voucherApi(path, body) {
   return result
 }
 
+async function confirmSubmittedTransaction(connection, strategy) {
+  const signature = typeof strategy === 'string' ? strategy : strategy.signature
+  try {
+    const confirmation = await connection.confirmTransaction(strategy, 'confirmed')
+    if (confirmation.value.err) throw new Error('Транзакция завершилась ошибкой в Solana')
+    return confirmation
+  } catch (error) {
+    // A blockhash-expiry timeout can race with confirmation reaching the RPC.
+    // Check transaction history before telling the user that an already landed
+    // payment failed; this also lets the caller continue with API registration.
+    const status = (await connection.getSignatureStatuses([signature], { searchTransactionHistory: true })).value[0]
+    if (status?.err) throw new Error('Транзакция завершилась ошибкой в Solana')
+    if (status?.confirmationStatus === 'confirmed' || status?.confirmationStatus === 'finalized') return { value: { err: null } }
+
+    const transaction = await connection.getTransaction(signature, {
+      commitment: 'confirmed', maxSupportedTransactionVersion: 0,
+    })
+    if (transaction?.meta?.err) throw new Error('Транзакция завершилась ошибкой в Solana')
+    if (transaction) return { value: { err: null } }
+
+    if (error?.name === 'TransactionExpiredBlockheightExceededError') {
+      throw new Error('Срок подтверждения транзакции истёк, и в истории Solana она пока не найдена. Сохрани подпись и проверь её в Solscan Devnet.')
+    }
+    throw error
+  }
+}
+
 const templates = [
   { id: 'birthday', title: 'С днём рождения', emoji: '🎂', tag: 'CELEBRATE', style: 'birthday' },
   { id: 'coffee', title: 'На кофе', emoji: '☕', tag: 'LITTLE TREAT', style: 'coffee' },
@@ -314,8 +341,7 @@ function CreatePage({ voucher, setVoucher, onGenerated, onToast }) {
       }
       signature = await sendTransaction(transaction, connection, { preflightCommitment: 'confirmed' })
       onToast({ type: 'sent', message: 'Транзакция отправлена' })
-      const confirmation = await connection.confirmTransaction({ signature, blockhash, lastValidBlockHeight }, 'confirmed')
-      if (confirmation.value.err) throw new Error('Транзакция завершилась ошибкой сети')
+      await confirmSubmittedTransaction(connection, { signature, blockhash, lastValidBlockHeight })
       onToast({ type: 'sent', message: 'Загрузка... Регистрируем ваучер' })
       let createdVoucher
       try {
@@ -339,7 +365,7 @@ function CreatePage({ voucher, setVoucher, onGenerated, onToast }) {
     } catch (error) {
       console.error('Voucher funding failed', error)
       const rejected = /reject|declin|cancel/i.test(`${error?.name} ${error?.message}`)
-      const message = rejected ? 'Транзакция отклонена пользователем' : `Ошибка API: ${signature ? `${error?.message || 'Ошибка сети'} Подпись: ${signature}` : (error?.message || 'Ошибка сети')}`
+      const message = rejected ? 'Транзакция отклонена пользователем' : `Не удалось завершить создание подарка: ${error?.message || 'ошибка сети'}${signature ? ` Подпись: ${signature}` : ''}`
       onToast({ type: 'error', message })
     } finally {
       setIsApiLoading(false)
@@ -509,14 +535,14 @@ function ClaimPage({ voucher, onToast, isVoucherLoading = false }) {
         onToast({ type: 'sent', message: 'Подтверди получение подарка в кошельке' })
         txHash = await sendTransaction(transaction, connection, { preflightCommitment: 'confirmed' })
         onToast({ type: 'sent', message: 'Транзакция отправлена, ожидаем подтверждение' })
-        confirmation = await connection.confirmTransaction({ signature: txHash, blockhash, lastValidBlockHeight }, 'confirmed')
+        confirmation = await confirmSubmittedTransaction(connection, { signature: txHash, blockhash, lastValidBlockHeight })
       } else {
         txHash = result.txHash || result.signature
         if (!txHash) throw new Error('Эскроу API не вернул хэш транзакции выплаты')
         onToast({ type: 'sent', message: 'Выплата отправлена, ожидаем подтверждение' })
         confirmation = result.blockhash && result.lastValidBlockHeight
-          ? await connection.confirmTransaction({ signature: txHash, blockhash: result.blockhash, lastValidBlockHeight: result.lastValidBlockHeight }, 'confirmed')
-          : await connection.confirmTransaction(txHash, 'confirmed')
+          ? await confirmSubmittedTransaction(connection, { signature: txHash, blockhash: result.blockhash, lastValidBlockHeight: result.lastValidBlockHeight })
+          : await confirmSubmittedTransaction(connection, txHash)
       }
       if (confirmation.value.err) throw new Error('Ошибка сети при подтверждении выплаты')
       setClaimed(true)
