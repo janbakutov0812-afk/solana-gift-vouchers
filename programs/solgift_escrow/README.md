@@ -21,7 +21,7 @@ This directory is an Anchor workspace alongside the existing Vite app. Use Rust 
 NO_DNA=1 anchor build
 ```
 
-The `declare_id!` in `src/lib.rs` is Anchor's public example ID used only to let the source compile. Before any deployment, generate a program keypair in a secure local environment, replace the example ID with its public key, and sync `Anchor.toml`. Do not commit the program keypair. The current prototype/serverless escrow remains unchanged until a separately reviewed frontend migration is made.
+The program ID and matching deploy keypair have been generated for this checkout. The keypair is stored at `target/deploy/solgift_escrow-keypair.json` (ignored by Git); keep it backed up securely and never commit or share it. Rebuild the program with this keypair before deployment. The current prototype/serverless escrow remains unchanged until a separately reviewed frontend migration is made.
 
 ## Security boundary
 
