@@ -77,6 +77,13 @@ function formatAmount(amount, currency) {
   return `${new Intl.NumberFormat('ru-RU', { maximumFractionDigits: currency === 'SOL' ? 4 : 2 }).format(number)} ${currency}`
 }
 
+function tokenAmount(transaction, address, mint, phase) {
+  return (transaction?.meta?.[`${phase}TokenBalances`] || []).reduce((sum, balance) => {
+    if (balance.mint !== mint || balance.owner !== address) return sum
+    return sum + Number(balance.uiTokenAmount?.amount || 0) / (10 ** (balance.uiTokenAmount?.decimals || 0))
+  }, 0)
+}
+
 function SolMark({ small = false }) {
   return <span className={`sol-mark ${small ? 'sol-mark-small' : ''}`} aria-label="Solana"><i /><i /><i /></span>
 }
@@ -104,6 +111,10 @@ function WalletConnection({ onToast }) {
   const [usdcBalance, setUsdcBalance] = useState(null)
   const [busy, setBusy] = useState(false)
   const [open, setOpen] = useState(false)
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const [history, setHistory] = useState([])
+  const [historyLoading, setHistoryLoading] = useState(false)
+  const [historyError, setHistoryError] = useState('')
   const walletMenuRef = useRef(null)
 
   useEffect(() => {
@@ -112,6 +123,9 @@ function WalletConnection({ onToast }) {
       setBalance(null)
       setUsdcBalance(null)
       setOpen(false)
+      setHistoryOpen(false)
+      setHistory([])
+      setHistoryError('')
       return () => { active = false }
     }
     connection.getBalance(publicKey, 'confirmed')
@@ -129,6 +143,41 @@ function WalletConnection({ onToast }) {
     }, 'confirmed')
     return () => { active = false; connection.removeAccountChangeListener(subscription) }
   }, [connection, connected, publicKey])
+
+  async function loadHistory() {
+    if (!publicKey || historyLoading) return
+    setHistoryLoading(true)
+    setHistoryError('')
+    try {
+      const signatures = await connection.getSignaturesForAddress(publicKey, { limit: 20 }, 'confirmed')
+      if (!signatures.length) { setHistory([]); return }
+      const transactions = await connection.getParsedTransactions(
+        signatures.map(({ signature }) => signature),
+        { commitment: 'confirmed', maxSupportedTransactionVersion: 0 },
+      )
+      const address = publicKey.toBase58()
+      const rows = transactions.flatMap((transaction, index) => {
+        if (!transaction?.meta) return []
+        const accountKeys = transaction.transaction.message.accountKeys
+        const ownerIndex = accountKeys.findIndex((key) => (key.pubkey || key).toBase58() === address)
+        if (ownerIndex < 0) return []
+        const solDelta = (transaction.meta.postBalances[ownerIndex] - transaction.meta.preBalances[ownerIndex]) / LAMPORTS_PER_SOL
+        const mint = USDC_DEVNET_MINT.toBase58()
+        const usdcDelta = tokenAmount(transaction, address, mint, 'post') - tokenAmount(transaction, address, mint, 'pre')
+        if (Math.abs(solDelta) < 0.000000001 && Math.abs(usdcDelta) < 0.000001) return []
+        return [{ signature: signatures[index].signature, blockTime: transaction.blockTime, solDelta, usdcDelta }]
+      })
+      setHistory(rows)
+    } catch (error) {
+      setHistoryError(error?.message || 'Не удалось загрузить историю транзакций')
+    } finally { setHistoryLoading(false) }
+  }
+
+  function toggleHistory() {
+    const nextOpen = !historyOpen
+    setHistoryOpen(nextOpen)
+    if (nextOpen) loadHistory()
+  }
 
   useEffect(() => {
     if (!open) return undefined
@@ -187,6 +236,43 @@ function WalletConnection({ onToast }) {
             <div><span>SOL</span><strong>{balance === null ? 'Загрузка…' : `${balance.toFixed(4)} SOL`}</strong></div>
             <div><span>USDC · Devnet</span><strong>{usdcBalance === null ? 'Загрузка…' : `${usdcBalance.toFixed(2)} USDC`}</strong></div>
           </div>
+          <section className="wallet-history" aria-label="История транзакций">
+            <div className="wallet-history-heading">
+              <strong>История транзакций</strong>
+              <button type="button" onClick={toggleHistory} aria-expanded={historyOpen}>{historyOpen ? 'Скрыть' : 'Показать'}</button>
+            </div>
+            {historyOpen && <>
+              {historyLoading && <p className="wallet-history-state">Загружаем последние подтверждённые операции…</p>}
+              {historyError && <div className="wallet-history-state wallet-history-error"><span>{historyError}</span><button type="button" onClick={loadHistory}>Повторить</button></div>}
+              {!historyLoading && !historyError && history.length === 0 && <p className="wallet-history-state">Пока нет операций с движением SOL или USDC.</p>}
+              {!historyLoading && history.length > 0 && (() => {
+                const totals = history.reduce((sum, row) => ({
+                  solIn: sum.solIn + Math.max(0, row.solDelta), solOut: sum.solOut + Math.max(0, -row.solDelta),
+                  usdcIn: sum.usdcIn + Math.max(0, row.usdcDelta), usdcOut: sum.usdcOut + Math.max(0, -row.usdcDelta),
+                }), { solIn: 0, solOut: 0, usdcIn: 0, usdcOut: 0 })
+                return <>
+                  <div className="wallet-history-totals">
+                    <div><strong>SOL</strong><span>↓ {totals.solIn.toFixed(6)} пришло</span><span>↑ {totals.solOut.toFixed(6)} ушло</span></div>
+                    <div><strong>USDC</strong><span>↓ {totals.usdcIn.toFixed(2)} пришло</span><span>↑ {totals.usdcOut.toFixed(2)} ушло</span></div>
+                  </div>
+                  <p className="wallet-history-note">Итоги по загруженным операциям (до 20). Расход SOL включает комиссии сети и rent.</p>
+                  <ul className="wallet-history-list">{history.map((row) => {
+                    const hasIncoming = row.solDelta > 0 || row.usdcDelta > 0
+                    const hasOutgoing = row.solDelta < 0 || row.usdcDelta < 0
+                    const direction = hasIncoming && hasOutgoing ? 'Смешанная' : hasIncoming ? 'Приход' : 'Расход'
+                    const amountLabel = row.solDelta && row.usdcDelta
+                      ? `${row.solDelta > 0 ? '+' : ''}${row.solDelta.toFixed(6)} SOL · ${row.usdcDelta > 0 ? '+' : ''}${row.usdcDelta.toFixed(2)} USDC`
+                      : row.solDelta ? `${row.solDelta > 0 ? '+' : ''}${row.solDelta.toFixed(6)} SOL` : `${row.usdcDelta > 0 ? '+' : ''}${row.usdcDelta.toFixed(2)} USDC`
+                    return <li key={row.signature}>
+                      <span className={`wallet-history-direction ${direction === 'Приход' ? 'is-in' : direction === 'Расход' ? 'is-out' : 'is-mixed'}`}>{direction}</span>
+                      <span className="wallet-history-entry"><strong>{amountLabel}</strong><small>{row.blockTime ? new Date(row.blockTime * 1000).toLocaleString('ru-RU') : 'Время неизвестно'}</small></span>
+                      <a href={`https://solscan.io/tx/${row.signature}?cluster=devnet`} target="_blank" rel="noreferrer" aria-label="Открыть транзакцию в Solscan"><ArrowUpRight size={14} /></a>
+                    </li>
+                  })}</ul>
+                </>
+              })()}
+            </>}
+          </section>
           <p className="wallet-account-help">Другие аккаунты выбираются в Phantom. Когда переключишь аккаунт, Solgift обновит подключённый адрес.</p>
           <div className="wallet-popover-actions">
             <a href={`https://solscan.io/account/${address}?cluster=devnet`} target="_blank" rel="noreferrer">Открыть в Solscan <ArrowUpRight size={14} /></a>
