@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { AnimatePresence, motion, useMotionValue, useSpring, useTransform } from 'framer-motion'
 import { useConnection, useWallet } from '@solana/wallet-adapter-react'
 import { useWalletModal } from '@solana/wallet-adapter-react-ui'
 import { LAMPORTS_PER_SOL, Transaction } from '@solana/web3.js'
-import { claimGiftInstruction, createGiftInstruction, decodeBase64Url } from './solgift-program.js'
+import { claimGiftInstruction, createGiftInstruction, decodeBase64Url, USDC_DEVNET_MINT } from './solgift-program.js'
 import {
   ArrowDown, ArrowRight, ArrowUpRight, Check, ChevronDown, Copy, Gift,
   LockKeyhole, Menu, ShieldCheck, Sparkles, Wallet, X, Zap,
@@ -101,39 +101,100 @@ function WalletConnection({ onToast }) {
   const { publicKey, connected, connect, disconnect, wallet } = useWallet()
   const { setVisible } = useWalletModal()
   const [balance, setBalance] = useState(null)
+  const [usdcBalance, setUsdcBalance] = useState(null)
   const [busy, setBusy] = useState(false)
+  const [open, setOpen] = useState(false)
+  const walletMenuRef = useRef(null)
 
   useEffect(() => {
     let active = true
-    if (!connected || !publicKey) { setBalance(null); return () => { active = false } }
+    if (!connected || !publicKey) {
+      setBalance(null)
+      setUsdcBalance(null)
+      setOpen(false)
+      return () => { active = false }
+    }
     connection.getBalance(publicKey, 'confirmed')
       .then((lamports) => { if (active) setBalance(lamports / LAMPORTS_PER_SOL) })
       .catch(() => { if (active) setBalance(null) })
+    connection.getParsedTokenAccountsByOwner(publicKey, { mint: USDC_DEVNET_MINT }, 'confirmed')
+      .then(({ value }) => {
+        if (!active) return
+        const total = value.reduce((sum, account) => sum + (account.account.data.parsed.info.tokenAmount.uiAmount || 0), 0)
+        setUsdcBalance(total)
+      })
+      .catch(() => { if (active) setUsdcBalance(null) })
     const subscription = connection.onAccountChange(publicKey, (account) => {
       if (active) setBalance(account.lamports / LAMPORTS_PER_SOL)
     }, 'confirmed')
     return () => { active = false; connection.removeAccountChangeListener(subscription) }
   }, [connection, connected, publicKey])
 
+  useEffect(() => {
+    if (!open) return undefined
+    function handlePointerDown(event) {
+      if (!walletMenuRef.current?.contains(event.target)) setOpen(false)
+    }
+    function handleKeyDown(event) {
+      if (event.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('pointerdown', handlePointerDown)
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [open])
+
   async function handleClick() {
+    if (connected) { setOpen((value) => !value); return }
     try {
       setBusy(true)
-      if (connected) await disconnect()
-      else if (wallet) await connect()
+      if (wallet) await connect()
       else setVisible(true)
     } catch (error) {
       onToast({ type: 'error', message: error?.name === 'WalletSignMessageError' ? 'Подключение отклонено в кошельке' : 'Не удалось подключить кошелёк' })
     } finally { setBusy(false) }
   }
 
+  async function copyAddress() {
+    if (!address) return
+    try {
+      await navigator.clipboard.writeText(address)
+      onToast({ type: 'success', message: 'Адрес кошелька скопирован' })
+    } catch {
+      onToast({ type: 'error', message: 'Не удалось скопировать адрес' })
+    }
+  }
+
   const address = publicKey?.toBase58()
   const label = connected && address ? `${address.slice(0, 4)}…${address.slice(-4)}` : 'Connect Wallet'
   return (
-    <motion.button className={`wallet-button wallet-connect ${connected ? 'wallet-connected' : ''}`} onClick={handleClick} disabled={busy} whileHover={{ scale: 1.025 }} whileTap={{ scale: 0.97 }}>
-      <Wallet size={15} />
-      <span>{busy ? 'Подключаем…' : label}</span>
-      {connected && <span className="wallet-balance">{balance === null ? '…' : `${balance.toFixed(3)} SOL`}</span>}
-    </motion.button>
+    <div className="wallet-menu-wrap" ref={walletMenuRef}>
+      <motion.button type="button" aria-expanded={connected ? open : undefined} aria-haspopup={connected ? 'dialog' : undefined} className={`wallet-button wallet-connect ${connected ? 'wallet-connected' : ''}`} onClick={handleClick} disabled={busy} whileHover={{ scale: 1.025 }} whileTap={{ scale: 0.97 }}>
+        <Wallet size={15} />
+        <span>{busy ? 'Подключаем…' : label}</span>
+        {connected && <span className="wallet-balance">{balance === null ? '…' : `${balance.toFixed(3)} SOL`}</span>}
+      </motion.button>
+      {connected && open && (
+        <section className="wallet-popover" role="dialog" aria-label="Сведения о кошельке">
+          <div className="wallet-popover-head">
+            <div><span className="wallet-popover-kicker">ПОДКЛЮЧЁННЫЙ КОШЕЛЁК</span><strong>{wallet?.adapter?.name || 'Solana wallet'}</strong></div>
+            <button type="button" className="wallet-popover-close" onClick={() => setOpen(false)} aria-label="Закрыть"><X size={16} /></button>
+          </div>
+          <div className="wallet-address-row"><span>{address}</span><button type="button" onClick={copyAddress} aria-label="Скопировать адрес" title="Скопировать адрес"><Copy size={15} /></button></div>
+          <div className="wallet-assets">
+            <div><span>SOL</span><strong>{balance === null ? 'Загрузка…' : `${balance.toFixed(4)} SOL`}</strong></div>
+            <div><span>USDC · Devnet</span><strong>{usdcBalance === null ? 'Загрузка…' : `${usdcBalance.toFixed(2)} USDC`}</strong></div>
+          </div>
+          <p className="wallet-account-help">Другие аккаунты выбираются в Phantom. Когда переключишь аккаунт, Solgift обновит подключённый адрес.</p>
+          <div className="wallet-popover-actions">
+            <a href={`https://solscan.io/account/${address}?cluster=devnet`} target="_blank" rel="noreferrer">Открыть в Solscan <ArrowUpRight size={14} /></a>
+            <button type="button" onClick={async () => { await disconnect(); setOpen(false) }}>Отключить сайт</button>
+          </div>
+        </section>
+      )}
+    </div>
   )
 }
 
