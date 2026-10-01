@@ -273,7 +273,7 @@ function WalletConnection({ onToast }) {
               })()}
             </>}
           </section>
-          <p className="wallet-account-help">Другие аккаунты выбираются в Phantom. Когда переключишь аккаунт, Solgift обновит подключённый адрес.</p>
+          <p className="wallet-account-help">Другие аккаунты выбираются в приложении кошелька. После переключения Solgift обновит подключённый адрес.</p>
           <div className="wallet-popover-actions">
             <a href={`https://solscan.io/account/${address}?cluster=devnet`} target="_blank" rel="noreferrer">Открыть в Solscan <ArrowUpRight size={14} /></a>
             <button type="button" onClick={async () => { await disconnect(); setOpen(false) }}>Отключить сайт</button>
@@ -441,7 +441,7 @@ function CreatePage({ voucher, setVoucher, onGenerated, onToast }) {
 
   async function fundVoucher() {
     if (!publicKey) {
-      onToast({ type: 'error', message: 'Сначала подключи кошелёк Phantom' })
+      onToast({ type: 'error', message: 'Сначала подключи Solana-кошелёк' })
       return
     }
     if (!VOUCHER_API) {
@@ -583,7 +583,7 @@ function CreatePage({ voucher, setVoucher, onGenerated, onToast }) {
           </div>
 
           <div className="form-footer">
-            <p className="devnet-note">Сайт работает в Solana Devnet. В Phantom включи «Тестовая сеть» и выбери «Solana Devnet», иначе кошелёк может не суметь проверить транзакцию.</p>
+            <p className="devnet-note">Сайт работает в Solana Devnet. В настройках Solflare или Phantom включи «Тестовая сеть» и выбери «Solana Devnet», иначе кошелёк может не суметь проверить транзакцию.</p>
             <div className="secure-note"><LockKeyhole size={14} /><span>Приватный ключ остаётся у тебя</span></div>
             <Button onClick={generate} className="generate-button" disabled={isApiLoading || !Number(voucher.amount) || Number(voucher.amount) <= 0 || [...secretWord.trim()].length < 12 || secretWord !== secretWordConfirm}>
               {isApiLoading ? <><span className="spinner" /> Создаём открытку...</> : <>Сгенерировать ссылку <ArrowRight size={16} className="button-arrow" /></>}
