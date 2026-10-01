@@ -18,7 +18,22 @@ USDC is restricted to the legacy SPL Token program and the canonical mainnet/dev
 This directory is an Anchor workspace alongside the existing Vite app. Use Rust 1.89+ and matching Anchor CLI 1.1.2 / Solana CLI 3.1.x. From the repository root:
 
 ```sh
-NO_DNA=1 anchor build
+NO_DNA=1 anchor build --no-idl -- --arch v0
+NO_DNA=1 anchor idl build --out target/idl/solgift_escrow.json --out-ts target/types/solgift_escrow.ts
+```
+
+The explicit `v0` target matches this program's Solana 3.1 dependencies. The current Anchor CLI defaults to `v3`, which does not support the unresolved syscall symbols emitted by these dependencies. Build the SBF binary and IDL in separate commands because Anchor forwards build arguments to the IDL test step too.
+
+## Devnet deployment
+
+Deployment uses a local fee-payer and upgrade-authority key at `~/.config/solana/id.json`. Keep that key private and out of Git. The Vercel API fee-payer is a separate server-side key and cannot sign this deployment. The 275,288-byte program binary needs about 1.40 Devnet SOL for rent exemption; keep at least 2 Devnet SOL in the local deploy wallet for rent and fees.
+
+```sh
+solana config set --url devnet
+solana-keygen new --outfile ~/.config/solana/id.json # only if this wallet file does not exist
+solana address
+solana balance
+NO_DNA=1 anchor deploy --provider.cluster devnet --provider.wallet ~/.config/solana/id.json
 ```
 
 The program ID and matching deploy keypair have been generated for this checkout. The keypair is stored at `target/deploy/solgift_escrow-keypair.json` (ignored by Git); keep it backed up securely and never commit or share it. Rebuild the program with this keypair before deployment. The current website/API now requires a separately shared secret phrase, but that check is not part of this Anchor program. The claim instructions below still use bearer-secret authorization; add and review an authorized claim flow before connecting the website or deploying this contract.
