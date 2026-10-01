@@ -547,6 +547,7 @@ function ClaimPage({ voucher, onToast, isVoucherLoading = false }) {
   useEffect(() => { if (voucher.status === 'claimed') setClaimed(true) }, [voucher.status])
   const { connection } = useConnection()
   const { publicKey, sendTransaction } = useWallet()
+  const hasGift = Boolean(voucher.voucherId)
   const isExpired = voucher.status === 'expired' || (voucher.expiresAt && Date.now() >= voucher.expiresAt * 1000)
   const isUnavailable = claimed || voucher.status === 'claimed' || voucher.status === 'refunded' || isExpired
 
@@ -622,11 +623,21 @@ function ClaimPage({ voucher, onToast, isVoucherLoading = false }) {
 
   return (
     <motion.main className="page claim-page" variants={slideVariants} initial="initial" animate="animate" exit="exit">
-      <div className="claim-topline"><span className="section-kicker">A LITTLE SOMETHING FOR YOU</span><span className="demo-tag"><span className="live-dot" /> {voucher.voucherId ? 'SOLANA VOUCHER' : 'ПРЕДПРОСМОТР'}</span></div>
+      <div className="claim-topline"><span className="section-kicker">{hasGift ? 'A LITTLE SOMETHING FOR YOU' : 'ПОДАРКИ ДЛЯ ТЕБЯ'}</span><span className="demo-tag"><span className="live-dot" /> {isVoucherLoading && !hasGift ? 'ПРОВЕРЯЕМ ССЫЛКУ' : hasGift ? 'SOLANA VOUCHER' : 'ПОКА ПУСТО'}</span></div>
       <section className={`claim-scene ${opened ? 'claim-opened' : ''}`}>
         <div className="claim-halo" />
         <AnimatePresence>{claimed && <Confetti key="confetti" />}</AnimatePresence>
-        {!opened ? (
+        {isVoucherLoading && !hasGift ? (
+          <div className="claim-empty-state" role="status"><span className="spinner" /><p>Проверяем ссылку на подарок…</p></div>
+        ) : !hasGift ? (
+          <div className="claim-empty-state">
+            <div className="claim-empty-icon"><Gift size={27} /></div>
+            <span className="section-kicker">ВХОДЯЩИЕ ПОДАРКИ</span>
+            <h1>Пока подарков нет</h1>
+            <p>Когда тебе отправят подарок, открой ссылку от отправителя — здесь появится его открытка.</p>
+            <span className="claim-empty-note"><LockKeyhole size={12} /> Секретную фразу отправитель передаст отдельно</span>
+          </div>
+        ) : !opened ? (
           <motion.div className="envelope-wrap" initial={{ opacity: 0, scale: 0.85 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.55, type: 'spring', bounce: 0.24 }}>
             <motion.div className="envelope-orbit" animate={{ rotate: 360 }} transition={{ duration: 34, repeat: Infinity, ease: 'linear' }} />
             <motion.button className="gift-envelope" onClick={openGift} aria-label="Открыть подарок" whileHover={{ scale: 1.045, rotate: -1.5 }} whileTap={{ scale: 0.96 }} animate={{ y: [0, -9, 0] }} transition={{ y: { duration: 3.6, repeat: Infinity, ease: 'easeInOut' } }}>
@@ -634,7 +645,7 @@ function ClaimPage({ voucher, onToast, isVoucherLoading = false }) {
               <div className="envelope-body"><div className="envelope-flap" /><div className="envelope-seal"><Gift size={27} /><span>✳</span></div><div className="envelope-fold-left"/><div className="envelope-fold-right"/></div>
               <span className="envelope-glint" />
             </motion.button>
-            <motion.div className="envelope-label" animate={{ opacity: [0.6, 1, 0.6] }} transition={{ duration: 2.2, repeat: Infinity }}>ТЕБЕ ПРИШЁЛ ПОДАРОК</motion.div>
+            <motion.div className="envelope-label" animate={{ opacity: [0.6, 1, 0.6] }} transition={{ duration: 2.2, repeat: Infinity }}>{voucher.status === 'claimed' ? 'ПОДАРОК УЖЕ ПОЛУЧЕН' : voucher.status === 'refunded' || isExpired ? 'СРОК ПОЛУЧЕНИЯ ИСТЁК' : 'ТЕБЕ ПРИШЁЛ ПОДАРОК'}</motion.div>
           </motion.div>
         ) : (
           <motion.div className="revealed-card" initial={{ opacity: 0, scale: 0.72, y: 28, rotateX: -14 }} animate={{ opacity: 1, scale: 1, y: 0, rotateX: 0 }} transition={{ duration: 0.72, type: 'spring', bounce: 0.2 }}>
@@ -655,8 +666,8 @@ function ClaimPage({ voucher, onToast, isVoucherLoading = false }) {
           </motion.div>
         )}
       </section>
-      {!opened && <div className="claim-instructions"><span>01</span><p>Нажми на конверт,<br />чтобы открыть сюрприз</p></div>}
-      <div className="claim-bottom-note"><span>SECURED BY SOLANA</span><span>Никаких скрытых условий. Только подарок.</span><span>✳</span></div>
+      {hasGift && !isVoucherLoading && !opened && <div className="claim-instructions"><span>01</span><p>Нажми на конверт,<br />чтобы открыть сюрприз</p></div>}
+      <div className="claim-bottom-note"><span>{hasGift ? 'SECURED BY SOLANA' : 'SOLANA GIFT VOUCHERS'}</span><span>{hasGift ? 'Никаких скрытых условий. Только подарок.' : 'Подарки появятся здесь по ссылке от отправителя.'}</span><span>✳</span></div>
     </motion.main>
   )
 }
