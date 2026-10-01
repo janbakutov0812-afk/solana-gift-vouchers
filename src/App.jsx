@@ -497,7 +497,11 @@ function ClaimPage({ voucher, onToast, isVoucherLoading = false }) {
     } catch (error) {
       console.error('Voucher claim failed', error)
       const rejected = /reject|declin|cancel/i.test(`${error?.name} ${error?.message}`)
-      onToast({ type: 'error', message: rejected ? 'Транзакция отклонена пользователем' : `Ошибка API: ${error?.message || 'Сервис недоступен'}` })
+      const message = /secret word is incorrect/i.test(error?.message || '') ? 'Секретная фраза неверна'
+        : /too many secret-word attempts/i.test(error?.message || '') ? 'Слишком много попыток. Попробуй через 15 минут'
+          : /predates secret-word/i.test(error?.message || '') ? 'Этот ваучер создан до защиты фразой; попроси отправителя создать новый'
+            : `Ошибка API: ${error?.message || 'Сервис недоступен'}`
+      onToast({ type: 'error', message: rejected ? 'Транзакция отклонена пользователем' : message })
     } finally { setIsApiLoading(false) }
   }
 
