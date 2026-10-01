@@ -115,6 +115,7 @@ function WalletConnection({ onToast }) {
   const [history, setHistory] = useState([])
   const [historyLoading, setHistoryLoading] = useState(false)
   const [historyError, setHistoryError] = useState('')
+  const [historyLoadedAddress, setHistoryLoadedAddress] = useState('')
   const walletMenuRef = useRef(null)
 
   useEffect(() => {
@@ -126,6 +127,7 @@ function WalletConnection({ onToast }) {
       setHistoryOpen(false)
       setHistory([])
       setHistoryError('')
+      setHistoryLoadedAddress('')
       return () => { active = false }
     }
     connection.getBalance(publicKey, 'confirmed')
@@ -144,18 +146,37 @@ function WalletConnection({ onToast }) {
     return () => { active = false; connection.removeAccountChangeListener(subscription) }
   }, [connection, connected, publicKey])
 
-  async function loadHistory() {
+  async function loadHistory(force = false) {
     if (!publicKey || historyLoading) return
+    const address = publicKey.toBase58()
+    if (!force && historyLoadedAddress === address) return
     setHistoryLoading(true)
     setHistoryError('')
     try {
-      const signatures = await connection.getSignaturesForAddress(publicKey, { limit: 20 }, 'confirmed')
-      if (!signatures.length) { setHistory([]); return }
-      const transactions = await connection.getParsedTransactions(
-        signatures.map(({ signature }) => signature),
-        { commitment: 'confirmed', maxSupportedTransactionVersion: 0 },
-      )
-      const address = publicKey.toBase58()
+      const signatures = await connection.getSignaturesForAddress(publicKey, { limit: 10 }, 'confirmed')
+      if (!signatures.length) { setHistory([]); setHistoryLoadedAddress(address); return }
+      const transactions = []
+      // Public Devnet RPC endpoints rate-limit large JSON-RPC batches. Fetch a
+      // few at a time and back off when the endpoint returns HTTP 429.
+      for (let offset = 0; offset < signatures.length; offset += 2) {
+        const batch = signatures.slice(offset, offset + 2)
+        let result
+        for (let attempt = 0; attempt < 4; attempt += 1) {
+          try {
+            result = await connection.getParsedTransactions(
+              batch.map(({ signature }) => signature),
+              { commitment: 'confirmed', maxSupportedTransactionVersion: 0 },
+            )
+            break
+          } catch (error) {
+            const rateLimited = /429|too many requests/i.test(error?.message || '')
+            if (!rateLimited || attempt === 3) throw error
+            await new Promise((resolve) => setTimeout(resolve, 700 * (2 ** attempt)))
+          }
+        }
+        transactions.push(...(result || []))
+        if (offset + 2 < signatures.length) await new Promise((resolve) => setTimeout(resolve, 350))
+      }
       const rows = transactions.flatMap((transaction, index) => {
         if (!transaction?.meta) return []
         const accountKeys = transaction.transaction.message.accountKeys
@@ -168,8 +189,11 @@ function WalletConnection({ onToast }) {
         return [{ signature: signatures[index].signature, blockTime: transaction.blockTime, solDelta, usdcDelta }]
       })
       setHistory(rows)
+      setHistoryLoadedAddress(address)
     } catch (error) {
-      setHistoryError(error?.message || 'Не удалось загрузить историю транзакций')
+      setHistoryError(/429|too many requests/i.test(error?.message || '')
+        ? 'Devnet RPC временно ограничил запросы. Подожди немного и повтори загрузку.'
+        : 'Не удалось загрузить историю. Проверь подключение и попробуй ещё раз.')
     } finally { setHistoryLoading(false) }
   }
 
@@ -243,7 +267,7 @@ function WalletConnection({ onToast }) {
             </div>
             {historyOpen && <>
               {historyLoading && <p className="wallet-history-state">Загружаем последние подтверждённые операции…</p>}
-              {historyError && <div className="wallet-history-state wallet-history-error"><span>{historyError}</span><button type="button" onClick={loadHistory}>Повторить</button></div>}
+              {historyError && <div className="wallet-history-state wallet-history-error"><span>{historyError}</span><button type="button" onClick={() => loadHistory(true)}>Повторить</button></div>}
               {!historyLoading && !historyError && history.length === 0 && <p className="wallet-history-state">Пока нет операций с движением SOL или USDC.</p>}
               {!historyLoading && history.length > 0 && (() => {
                 const totals = history.reduce((sum, row) => ({
@@ -255,7 +279,7 @@ function WalletConnection({ onToast }) {
                     <div><strong>SOL</strong><span>↓ {totals.solIn.toFixed(6)} пришло</span><span>↑ {totals.solOut.toFixed(6)} ушло</span></div>
                     <div><strong>USDC</strong><span>↓ {totals.usdcIn.toFixed(2)} пришло</span><span>↑ {totals.usdcOut.toFixed(2)} ушло</span></div>
                   </div>
-                  <p className="wallet-history-note">Итоги по загруженным операциям (до 20). Расход SOL включает комиссии сети и rent.</p>
+                  <p className="wallet-history-note">Итоги по последним операциям (до 10). Расход SOL включает комиссии сети и rent.</p>
                   <ul className="wallet-history-list">{history.map((row) => {
                     const hasIncoming = row.solDelta > 0 || row.usdcDelta > 0
                     const hasOutgoing = row.solDelta < 0 || row.usdcDelta < 0
