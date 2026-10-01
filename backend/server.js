@@ -1,6 +1,6 @@
 import { createServer } from 'node:http'
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
-import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto'
+import { createCipheriv, createDecipheriv, createHmac, randomBytes } from 'node:crypto'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import bs58 from 'bs58'
@@ -11,6 +11,7 @@ import {
   TOKEN_PROGRAM_ID, createAssociatedTokenAccountIdempotentInstruction,
   createTransferCheckedInstruction, getAssociatedTokenAddress,
 } from '@solana/spl-token'
+import { createSecretWordVerifier, verifySecretWord } from '../lib/secret-word.js'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const databasePath = process.env.ESCROW_DB_PATH || path.join(here, 'data', 'vouchers.json')
@@ -104,6 +105,7 @@ async function prepare(body) {
   const amount = Number(amountUnits(body.amount, body.currency)) / (body.currency === 'SOL' ? 1e9 : 1e6)
   if (!templates.has(body.templateId)) throw new Error('Unknown templateId')
   if (typeof body.message !== 'string' || body.message.length > 120) throw new Error('Message must be 120 characters or fewer')
+  const secretWord = await createSecretWordVerifier(body.secretWord, createHmac('sha256', encryptionKey).update('solgift:secret-word-pepper:v1').digest())
 
   const now = Date.now()
   database.vouchers = database.vouchers.filter((voucher) => voucher.status !== 'prepared'
@@ -114,6 +116,8 @@ async function prepare(body) {
     voucherId, senderAddress: sender.toBase58(), amount, currency: body.currency,
     templateId: body.templateId, message: body.message, escrowAddress: escrow.publicKey.toBase58(),
     escrowSecret: encryptSecret(Buffer.from(escrow.secretKey)), status: 'prepared',
+    secretWordSalt: secretWord.salt, secretWordHash: secretWord.verifier,
+    secretWordAttempts: 0, secretWordAttemptWindow: Date.now(),
     createdAt: new Date().toISOString(),
   })
   await persist()
@@ -255,6 +259,21 @@ async function claim(body) {
   if (typeof body.voucherId !== 'string') throw new Error('Invalid voucherId')
   const voucher = findVoucher(body.voucherId)
   if (!voucher) throw new Error('Voucher not found')
+  if (!voucher.secretWordSalt || !voucher.secretWordHash) {
+    throw new Error('This voucher predates secret-word protection and must be recreated')
+  }
+  const now = Date.now()
+  if (now - Number(voucher.secretWordAttemptWindow || 0) >= 15 * 60 * 1000) {
+    voucher.secretWordAttemptWindow = now
+    voucher.secretWordAttempts = 0
+  }
+  voucher.secretWordAttempts = Number(voucher.secretWordAttempts || 0) + 1
+  await persist()
+  if (voucher.secretWordAttempts > 8) throw new Error('Too many secret-word attempts; try again in 15 minutes')
+  const pepper = createHmac('sha256', encryptionKey).update('solgift:secret-word-pepper:v1').digest()
+  if (!await verifySecretWord(body.secretWord, voucher.secretWordSalt, voucher.secretWordHash, pepper)) {
+    throw new Error('Secret word is incorrect')
+  }
   const recipient = address(body.recipientAddress, 'recipient').toBase58()
   if (activeClaims.has(voucher.voucherId)) throw new Error('Voucher claim is already in progress')
   activeClaims.add(voucher.voucherId)
@@ -305,7 +324,9 @@ async function handle(request, response) {
     return json(response, 404, { message: 'Endpoint not found' })
   } catch (error) {
     const message = error instanceof SyntaxError ? 'Invalid JSON request body' : error.message || 'Unexpected server error'
-    const status = /not found/i.test(message) ? 404 : /already|in progress|claimable/i.test(message) ? 409 : 400
+    const status = /not found/i.test(message) ? 404 : /too many secret-word attempts/i.test(message) ? 429
+      : /secret word is incorrect/i.test(message) ? 401
+        : /already|in progress|claimable/i.test(message) ? 409 : 400
     return json(response, status, { status: 'error', message })
   }
 }

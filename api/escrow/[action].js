@@ -1,6 +1,6 @@
 import { neon } from '@neondatabase/serverless'
 import bs58 from 'bs58'
-import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto'
+import { createCipheriv, createDecipheriv, createHmac, randomBytes } from 'node:crypto'
 import {
   Connection, Keypair, PublicKey, SystemProgram, Transaction,
 } from '@solana/web3.js'
@@ -8,6 +8,7 @@ import {
   TOKEN_PROGRAM_ID, createAssociatedTokenAccountIdempotentInstruction,
   createTransferCheckedInstruction, getAssociatedTokenAddress,
 } from '@solana/spl-token'
+import { createSecretWordVerifier, verifySecretWord } from '../../lib/secret-word.js'
 
 const templates = new Set(['birthday', 'coffee', 'thanks', 'study'])
 const network = process.env.ESCROW_NETWORK || 'devnet'
@@ -44,6 +45,10 @@ async function ensureSchema() {
       funded_at timestamptz,
       tx_hash text UNIQUE,
       recipient_address text,
+      secret_word_salt text,
+      secret_word_hash text,
+      secret_attempts integer NOT NULL DEFAULT 0,
+      secret_attempt_window timestamptz NOT NULL DEFAULT now(),
       claim_tx_hash text,
       claim_raw_transaction text,
       claim_blockhash text,
@@ -52,6 +57,10 @@ async function ensureSchema() {
     )`
     await sql()`CREATE INDEX IF NOT EXISTS escrow_vouchers_status_created_idx
       ON escrow_vouchers (status, created_at)`
+    await sql()`ALTER TABLE escrow_vouchers ADD COLUMN IF NOT EXISTS secret_word_salt text`
+    await sql()`ALTER TABLE escrow_vouchers ADD COLUMN IF NOT EXISTS secret_word_hash text`
+    await sql()`ALTER TABLE escrow_vouchers ADD COLUMN IF NOT EXISTS secret_attempts integer NOT NULL DEFAULT 0`
+    await sql()`ALTER TABLE escrow_vouchers ADD COLUMN IF NOT EXISTS secret_attempt_window timestamptz NOT NULL DEFAULT now()`
   })().catch((error) => { schemaReady = undefined; throw error })
   return schemaReady
 }
@@ -135,13 +144,16 @@ async function prepare(body) {
   requireDevnet()
   await ensureSchema()
   const voucher = validateVoucher(body)
+  const secretWord = await createSecretWordVerifier(body.secretWord, createHmac('sha256', masterKey()).update('solgift:secret-word-pepper:v1').digest())
   const escrow = Keypair.generate()
   const voucherId = `escrow_${randomBytes(18).toString('base64url')}`
   await sql()`DELETE FROM escrow_vouchers WHERE status = 'prepared' AND created_at < now() - interval '2 hours'`
   await sql()`INSERT INTO escrow_vouchers
-    (voucher_id, sender_address, amount, currency, template_id, message, escrow_address, escrow_secret, status)
+    (voucher_id, sender_address, amount, currency, template_id, message, escrow_address, escrow_secret,
+      secret_word_salt, secret_word_hash, status)
     VALUES (${voucherId}, ${voucher.senderAddress}, ${voucher.amount}, ${voucher.currency}, ${voucher.templateId},
-      ${voucher.message}, ${escrow.publicKey.toBase58()}, ${encryptSecret(Buffer.from(escrow.secretKey))}, 'prepared')`
+      ${voucher.message}, ${escrow.publicKey.toBase58()}, ${encryptSecret(Buffer.from(escrow.secretKey))},
+      ${secretWord.salt}, ${secretWord.verifier}, 'prepared')`
   return { escrowAddress: escrow.publicKey.toBase58() }
 }
 
@@ -339,6 +351,20 @@ async function claim(body) {
   const rows = await sql()`SELECT * FROM escrow_vouchers WHERE voucher_id = ${body.voucherId} LIMIT 1`
   if (!rows.length) throw new Error('Voucher not found')
   let voucher = rows[0]
+  if (!voucher.secret_word_salt || !voucher.secret_word_hash) {
+    throw new Error('This voucher predates secret-word protection and must be recreated')
+  }
+  const attempts = await sql()`UPDATE escrow_vouchers
+    SET secret_attempts = CASE WHEN secret_attempt_window < now() - interval '15 minutes' THEN 1 ELSE secret_attempts + 1 END,
+        secret_attempt_window = CASE WHEN secret_attempt_window < now() - interval '15 minutes' THEN now() ELSE secret_attempt_window END
+    WHERE voucher_id = ${voucher.voucher_id} RETURNING secret_attempts`
+  if (!attempts.length || Number(attempts[0].secret_attempts) > 8) {
+    throw new Error('Too many secret-word attempts; try again in 15 minutes')
+  }
+  const pepper = createHmac('sha256', masterKey()).update('solgift:secret-word-pepper:v1').digest()
+  if (!await verifySecretWord(body.secretWord, voucher.secret_word_salt, voucher.secret_word_hash, pepper)) {
+    throw new Error('Secret word is incorrect')
+  }
   if (voucher.status === 'claimed') {
     if (voucher.recipient_address !== recipient) throw new Error('Voucher has already been claimed')
     return { txHash: voucher.claim_tx_hash }
@@ -414,9 +440,11 @@ export default async function handler(request, response) {
     console.error('Escrow API error:', error)
     const message = error instanceof SyntaxError ? 'Invalid request body' : error.message || 'Unexpected server error'
     const status = error.code === 'FEE_PAYER_UNFUNDED' ? 503
+      : /too many secret-word attempts/i.test(message) ? 429
+      : /secret word is incorrect/i.test(message) ? 401
       : /not found/i.test(message) ? 404
-      : /already|in progress|claimable|reserved/i.test(message) ? 409
-        : /^(Invalid |Amount |Currency |Unknown |Message |Transaction |Funding transaction |No matching |Voucher )/.test(message) ? 400 : 500
+      : /already|in progress|claimable|reserved|predates secret-word/i.test(message) ? 409
+        : /^(Invalid |Amount |Currency |Unknown |Message |Secret phrase|Secret word is required|Transaction |Funding transaction |No matching |Voucher )/.test(message) ? 400 : 500
     return send(response, status, { status: 'error', message }, routeOrigin)
   }
 }

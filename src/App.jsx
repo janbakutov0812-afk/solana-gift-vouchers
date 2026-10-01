@@ -255,6 +255,8 @@ function HomePage({ voucher, onCreate, onClaim }) {
 
 function CreatePage({ voucher, setVoucher, onGenerated, onToast }) {
   const [isApiLoading, setIsApiLoading] = useState(false)
+  const [secretWord, setSecretWord] = useState('')
+  const [secretWordConfirm, setSecretWordConfirm] = useState('')
   const { connection } = useConnection()
   const { publicKey, sendTransaction } = useWallet()
 
@@ -274,6 +276,10 @@ function CreatePage({ voucher, setVoucher, onGenerated, onToast }) {
       onToast({ type: 'error', message: 'Эскроу API не настроен — перевод не отправлялся' })
       return
     }
+    if ([...secretWord.trim()].length < 12 || secretWord !== secretWordConfirm) {
+      onToast({ type: 'error', message: secretWord !== secretWordConfirm ? 'Секретные фразы не совпадают' : 'Задай секретную фразу длиной не менее 12 символов' })
+      return
+    }
     setIsApiLoading(true)
     let signature
     try {
@@ -281,6 +287,7 @@ function CreatePage({ voucher, setVoucher, onGenerated, onToast }) {
       const preparation = await voucherApi('/api/escrow/prepare', {
         senderAddress: publicKey.toBase58(), currency: voucher.currency,
         amount: Number(voucher.amount), templateId: voucher.template.id, message: voucher.message,
+        secretWord,
       })
       if (!preparation.escrowAddress) {
         throw new Error('API не вернул адрес escrow; средства не отправлены')
@@ -328,7 +335,7 @@ function CreatePage({ voucher, setVoucher, onGenerated, onToast }) {
       link.searchParams.set('id', voucherId)
       const next = { ...voucher, link: link.toString(), voucherId, signature, status: 'active' }
       setVoucher(next)
-      onGenerated(next)
+      onGenerated(next, secretWord)
       onToast({ type: 'success', message: 'Ваучер создан' })
     } catch (error) {
       console.error('Voucher funding failed', error)
@@ -391,9 +398,21 @@ function CreatePage({ voucher, setVoucher, onGenerated, onToast }) {
             <div className="amount-hint message-hint"><span>Только добрые слова, пожалуйста</span><span>{voucher.message.length}/120</span></div>
           </div>
 
+          <div className="form-separator" />
+
+          <div className="form-section">
+            <div className="form-heading"><span className="form-step">04</span><div><h2>Защити подарок</h2><p>Получателю понадобятся ссылка и секретная фраза.</p></div></div>
+            <label className="input-label" htmlFor="gift-secret-word">Секретная фраза</label>
+            <div className="amount-input-wrap secret-word-input-wrap"><input id="gift-secret-word" type="password" autoComplete="off" maxLength={256} value={secretWord} onChange={(event) => setSecretWord(event.target.value)} placeholder="Например, три слова" /></div>
+            <label className="input-label secret-word-confirm-label" htmlFor="gift-secret-word-confirm">Повтори фразу</label>
+            <div className="amount-input-wrap secret-word-input-wrap"><input id="gift-secret-word-confirm" type="password" autoComplete="new-password" maxLength={256} value={secretWordConfirm} onChange={(event) => setSecretWordConfirm(event.target.value)} placeholder="Повтори секретную фразу" /></div>
+            <div className="amount-hint"><span>Минимум 12 символов; лучше несколько слов</span></div>
+            <p className="secret-word-note">Не добавляй фразу в ссылку. Передай её получателю отдельно.</p>
+          </div>
+
           <div className="form-footer">
             <div className="secure-note"><LockKeyhole size={14} /><span>Приватный ключ остаётся у тебя</span></div>
-            <Button onClick={generate} className="generate-button" disabled={isApiLoading || !Number(voucher.amount) || Number(voucher.amount) <= 0}>
+            <Button onClick={generate} className="generate-button" disabled={isApiLoading || !Number(voucher.amount) || Number(voucher.amount) <= 0 || [...secretWord.trim()].length < 12 || secretWord !== secretWordConfirm}>
               {isApiLoading ? <><span className="spinner" /> Создаём открытку...</> : <>Сгенерировать ссылку <ArrowRight size={16} className="button-arrow" /></>}
             </Button>
           </div>
@@ -437,6 +456,7 @@ function ClaimPage({ voucher, onToast, isVoucherLoading = false }) {
   const [opened, setOpened] = useState(false)
   const [claimed, setClaimed] = useState(false)
   const [isApiLoading, setIsApiLoading] = useState(false)
+  const [secretWord, setSecretWord] = useState('')
   useEffect(() => { if (voucher.status === 'claimed') setClaimed(true) }, [voucher.status])
   const { connection } = useConnection()
   const { publicKey } = useWallet()
@@ -454,12 +474,16 @@ function ClaimPage({ voucher, onToast, isVoucherLoading = false }) {
       onToast({ type: 'error', message: 'Ссылка не связана с эскроу-сервисом; запрос не отправлен' })
       return
     }
+    if ([...secretWord.trim()].length < 12) {
+      onToast({ type: 'error', message: 'Введи секретную фразу, которую тебе передал отправитель' })
+      return
+    }
     if (isApiLoading || claimed) return
     setIsApiLoading(true)
     try {
       onToast({ type: 'sent', message: 'Загрузка... Запрашиваем выплату' })
       const result = await voucherApi('/api/escrow/claim', {
-        voucherId: voucher.voucherId, recipientAddress: publicKey.toBase58(),
+        voucherId: voucher.voucherId, recipientAddress: publicKey.toBase58(), secretWord,
       })
       const txHash = result.txHash || result.signature
       if (!txHash) throw new Error('Эскроу API не вернул хэш транзакции выплаты')
@@ -504,7 +528,8 @@ function ClaimPage({ voucher, onToast, isVoucherLoading = false }) {
             <h1>{voucher.template.title}</h1>
             <p className="revealed-message">“{voucher.message || 'Небольшой сюрприз специально для тебя ✨'}”</p>
             <div className="revealed-from"><span className="from-avatar">✳</span><span>С теплом, <strong>твой друг</strong></span><span className="from-dot">·</span><span className="onchain-label"><SolMark small /> on-chain</span></div>
-            <Button onClick={claimGift} className={`claim-button ${claimed ? 'claim-button-done' : ''}`} disabled={isVoucherLoading || isApiLoading || claimed || voucher.status === 'claimed'}>
+            {!claimed && voucher.status !== 'claimed' && <div className="claim-secret-field"><label className="input-label" htmlFor="claim-secret-word">Секретная фраза</label><div className="amount-input-wrap secret-word-input-wrap"><input id="claim-secret-word" type="password" autoComplete="off" maxLength={256} value={secretWord} onChange={(event) => setSecretWord(event.target.value)} placeholder="Введи фразу от отправителя" /></div></div>}
+            <Button onClick={claimGift} className={`claim-button ${claimed ? 'claim-button-done' : ''}`} disabled={isVoucherLoading || isApiLoading || claimed || voucher.status === 'claimed' || [...secretWord.trim()].length < 12}>
               {claimed || voucher.status === 'claimed' ? <><Check size={17} /> Успешно выплачено</> : isVoucherLoading || isApiLoading ? <><span className="spinner" /> Отправляем…</> : <>Забрать на кошелёк <ArrowRight className="button-arrow" size={17} /></>}
             </Button>
             <span className="claim-footnote"><LockKeyhole size={12} /> {publicKey ? 'Выплата эскроу-сервисом после подтверждения' : 'Сначала подключи кошелёк получателя'}</span>
@@ -519,6 +544,7 @@ function ClaimPage({ voucher, onToast, isVoucherLoading = false }) {
 
 function LinkModal({ voucher, onClose, onClaim }) {
   const [copied, setCopied] = useState(false)
+  const [copiedSecret, setCopiedSecret] = useState(false)
 
   async function copyLink() {
     try {
@@ -537,6 +563,25 @@ function LinkModal({ voucher, onClose, onClaim }) {
     window.setTimeout(() => setCopied(false), 2200)
   }
 
+  async function copySecretWord() {
+    try {
+      await navigator.clipboard.writeText(voucher.secretWord)
+      setCopiedSecret(true)
+      window.setTimeout(() => setCopiedSecret(false), 2200)
+    } catch {
+      const text = document.createElement('textarea')
+      text.value = voucher.secretWord
+      text.style.position = 'fixed'
+      text.style.opacity = '0'
+      document.body.appendChild(text)
+      text.select()
+      document.execCommand('copy')
+      text.remove()
+      setCopiedSecret(true)
+      window.setTimeout(() => setCopiedSecret(false), 2200)
+    }
+  }
+
   return (
     <motion.div className="modal-backdrop" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose}>
       <motion.div className="link-modal glass-panel" role="dialog" aria-modal="true" aria-labelledby="link-modal-title" initial={{ opacity: 0, y: 24, scale: 0.94 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 12, scale: 0.97 }} transition={{ type: 'spring', duration: 0.45 }} onClick={(event) => event.stopPropagation()}>
@@ -544,11 +589,13 @@ function LinkModal({ voucher, onClose, onClaim }) {
         <div className="modal-success"><div className="modal-success-ring"><Check size={23} /></div><span className="success-ray ray-a"/><span className="success-ray ray-b"/></div>
         <span className="section-kicker">ВОТ ЭТО ДА!</span>
         <h2 id="link-modal-title">Твой подарок<br /><span className="gradient-text">уже готов.</span></h2>
-        <p className="modal-description">Осталось отправить другу ссылку. Момент открытия — за ним.</p>
+        <p className="modal-description">Отправь другу ссылку, а секретную фразу передай отдельно.</p>
         <div className="link-copy-field"><span>{voucher.link}</span><button onClick={copyLink} aria-label="Скопировать ссылку">{copied ? <Check size={16} /> : <Copy size={16} />}</button></div>
         <Button onClick={copyLink} className="modal-copy-button">{copied ? <><Check size={16} /> Скопировано</> : <>Скопировать ссылку <ArrowRight size={16} className="button-arrow" /></>}</Button>
+        <div className="secret-share-card"><div><span className="section-kicker">ПЕРЕДАЙ ОТДЕЛЬНО ОТ ССЫЛКИ</span><strong>{voucher.secretWord}</strong></div><button onClick={copySecretWord} aria-label="Скопировать секретную фразу">{copiedSecret ? <Check size={15} /> : <Copy size={15} />}</button></div>
+        <p className="secret-share-note">Тот, у кого есть и ссылка, и фраза, сможет получить подарок.</p>
         <button className="see-claim-link" onClick={onClaim}>Открыть экран получателя <ArrowUpRight size={14} /></button>
-        <div className="modal-bottom"><LockKeyhole size={12} /> ВАУЧЕР SOLANA · ССЫЛКА СОДЕРЖИТ ТОЛЬКО ID</div>
+        <div className="modal-bottom"><LockKeyhole size={12} /> ВАУЧЕР SOLANA · ССЫЛКА НЕ СОДЕРЖИТ СЕКРЕТНУЮ ФРАЗУ</div>
       </motion.div>
     </motion.div>
   )
@@ -569,6 +616,7 @@ function App() {
   const initialVoucherId = requestedVoucherId && /^[A-Za-z0-9_-]{1,128}$/.test(requestedVoucherId) ? requestedVoucherId : null
   const [page, setPage] = useState(initialVoucherId ? 'claim' : 'home')
   const [voucher, setVoucher] = useState(initialVoucher)
+  const [deliverySecretWord, setDeliverySecretWord] = useState('')
   const [modalOpen, setModalOpen] = useState(false)
   const [toast, setToast] = useState(null)
   const [isApiLoading, setIsApiLoading] = useState(false)
@@ -611,6 +659,7 @@ function App() {
 
   function navigate(id) {
     setModalOpen(false)
+    if (id !== 'create') setDeliverySecretWord('')
     setPage(id)
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
@@ -622,12 +671,12 @@ function App() {
       <Topbar page={page} setPage={navigate} onToast={notify} />
       <AnimatePresence mode="wait">
         {page === 'home' && <HomePage key="home" voucher={voucher} onCreate={() => navigate('create')} onClaim={() => navigate('claim')} />}
-        {page === 'create' && <CreatePage key="create" voucher={voucher} setVoucher={setVoucher} onToast={notify} onGenerated={() => setModalOpen(true)} />}
+        {page === 'create' && <CreatePage key="create" voucher={voucher} setVoucher={setVoucher} onToast={notify} onGenerated={(next, phrase) => { setVoucher(next); setDeliverySecretWord(phrase); setModalOpen(true) }} />}
         {page === 'claim' && <ClaimPage key={`claim-${voucher.voucherId || voucher.link}`} voucher={voucher} onToast={notify} isVoucherLoading={isApiLoading} />}
       </AnimatePresence>
       <footer className="site-footer"><button className="footer-brand" onClick={() => navigate('home')}><span className="brand-icon small-brand-icon"><Gift size={13} /></span> solgift<span className="brand-dot">.</span></button><span>Маленькие жесты. Большая энергия.</span><span className="footer-right">MADE WITH <span>✳</span> ON SOLANA</span></footer>
       <AnimatePresence>{toast && <StatusToast key={`${toast.type}-${toast.message}`} toast={toast} />}</AnimatePresence>
-      <AnimatePresence>{modalOpen && <LinkModal voucher={voucher} onClose={() => setModalOpen(false)} onClaim={() => navigate('claim')} />}</AnimatePresence>
+      <AnimatePresence>{modalOpen && <LinkModal voucher={{ ...voucher, secretWord: deliverySecretWord }} onClose={() => { setModalOpen(false); setDeliverySecretWord('') }} onClaim={() => navigate('claim')} />}</AnimatePresence>
     </div>
   )
 }

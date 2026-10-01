@@ -209,6 +209,9 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 .amount-input-wrap input[type=number] { -moz-appearance: textfield; }
 .amount-unit { color: #aaaab4; font: 10px 'DM Mono', monospace; }
 .amount-input-wrap > svg { color: #60606b; transform: rotate(-90deg); }
+.secret-word-input-wrap input { font-size: 11px; font-family: inherit; }
+.secret-word-confirm-label { margin-top: 12px; }
+.secret-word-note { color: #777781; font-size: 8px; line-height: 1.6; margin: 8px 0 0; }
 .amount-hint { margin-top: 7px; display: flex; justify-content: space-between; color: #686873; font-size: 8px; }
 textarea { width: 100%; min-height: 68px; resize: vertical; padding: 12px 13px; background: rgba(255,255,255,.027); border: 1px solid rgba(255,255,255,.09); border-radius: 10px; outline: 0; color: #eaeaf0; font-size: 10px; line-height: 1.6; transition: border .2s, box-shadow .2s; }
 textarea:focus { border-color: rgba(153,69,255,.6); box-shadow: 0 0 0 3px rgba(153,69,255,.09); }
@@ -291,6 +294,8 @@ textarea::placeholder { color: #595963; }
 .revealed-art-spark { left: 23%; top: 24%; font-size: 15px; }
 .revealed-art-dot { right: 20%; bottom: 27%; color: var(--green); font-size: 18px; }
 .revealed-card > .voucher-eyebrow { display: block; margin-bottom: 8px; }
+.claim-secret-field { margin: 15px 0 10px; text-align: left; }
+.claim-secret-field .input-label { margin-bottom: 7px; }
 .revealed-amount { display: flex; justify-content: center; align-items: baseline; gap: 9px; }
 .revealed-amount strong { color: #fff; font: 34px 'DM Mono', monospace; letter-spacing: -2px; }
 .revealed-amount > span { display: inline-flex; align-items: center; gap: 5px; color: #b6b6c0; font: 11px 'DM Mono', monospace; }
@@ -313,6 +318,12 @@ textarea::placeholder { color: #595963; }
 
 .modal-backdrop { position: fixed; z-index: 30; inset: 0; display: grid; place-items: center; padding: 20px; background: rgba(5,5,8,.75); backdrop-filter: blur(11px); }
 .link-modal { width: min(390px, 100%); position: relative; overflow: hidden; padding: 31px 27px 20px; border-radius: 20px; text-align: center; }
+.secret-share-card { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 12px; padding: 12px; border: 1px solid rgba(20,241,149,.17); border-radius: 10px; background: rgba(20,241,149,.045); text-align: left; }
+.secret-share-card > div { display: grid; gap: 7px; min-width: 0; }
+.secret-share-card .section-kicker { color: #9cbeaF; font-size: 7px; }
+.secret-share-card strong { color: #f1f1f5; font-size: 11px; font-weight: 600; overflow-wrap: anywhere; }
+.secret-share-card button { display: grid; place-items: center; flex: 0 0 auto; width: 31px; height: 31px; border: 1px solid rgba(255,255,255,.1); border-radius: 8px; background: rgba(255,255,255,.04); color: #b9ffe0; cursor: pointer; }
+.secret-share-note { margin: 8px 0 0; color: #777781; font-size: 8px; line-height: 1.5; }
 .link-modal::before { content: ''; position: absolute; top: -120px; left: 50%; width: 290px; height: 210px; border-radius: 50%; transform: translateX(-50%); background: rgba(20,241,149,.1); filter: blur(54px); }
 .modal-close { position: absolute; right: 13px; top: 13px; width: 30px; height: 30px; display: grid; place-items: center; border-radius: 9px; border: 1px solid rgba(255,255,255,.08); background: rgba(255,255,255,.035); color: #9898a2; cursor: pointer; transition: color .2s, border .2s; }
 .modal-close:hover { color: white; border-color: rgba(255,255,255,.2); }

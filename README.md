@@ -12,7 +12,7 @@
 
 Sending cryptocurrency to someone who is new to Web3 can mean explaining wallet addresses, wallets, and transaction steps. Solgift turns a transfer into a familiar gift experience: a designed greeting card, a personal message, and a link for the recipient.
 
-The sender chooses a design, SOL or USDC, and an amount. The recipient opens the link, connects a wallet, and claims the gift. A separate escrow backend must handle funding verification and prevent a voucher from being claimed more than once.
+The sender chooses a design, SOL or USDC, an amount, and a secret phrase. The recipient opens the link, connects a wallet, enters the phrase shared separately, and claims the gift. The escrow backend verifies the phrase and prevents a voucher from being claimed more than once.
 
 ## Why Solana
 
@@ -27,6 +27,7 @@ The sender chooses a design, SOL or USDC, and an amount. The recipient opens the
 - Gift preview and recipient screen.
 - Funding transaction preparation through the API, wallet signing, and on-chain confirmation.
 - Voucher lookup by link ID and a claim request through the API.
+- Separate secret phrase required at creation and claim; the API stores a salted scrypt verifier and limits failed attempts.
 
 Voucher creation and claims require the local escrow API to be running. The development API uses temporary custodial signers and devnet only.
 
@@ -42,6 +43,8 @@ Recipient ── opens link ──▶ Frontend ── reads voucher ──▶ Es
 ```
 
 The frontend does not store the escrow private key. See [BACKEND_API.md](./BACKEND_API.md) for API behavior and security requirements.
+
+The secret phrase must not be included in the link. Share it with the recipient through a separate channel. This phrase protection is implemented in the existing escrow API; the Anchor program remains disconnected from the site and still needs an authorized claim flow before deployment.
 
 An initial on-chain Anchor escrow is being developed in [`programs/solgift_escrow`](./programs/solgift_escrow/README.md). The current website still calls the Vercel escrow API; it does not yet use this program. The on-chain implementation is a dev-stage prototype and must not receive valuable funds before dedicated tests, a devnet acceptance flow, a verified build, frontend integration, and independent review.
 

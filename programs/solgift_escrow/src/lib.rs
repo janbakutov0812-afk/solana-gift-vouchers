@@ -1,4 +1,398 @@
-YªçŠx-®éÜj×¢ëiºÚ+Š§j[h‘éÜ¢éíë_}N‹Z–‹­¦ëeŠw¬ÕÕÍ”…¹¡½É}±…¹œèéÁÉ•±Õ‘”èè¨ì)ÕÍ”…¹¡½É}±…¹œèéÍåÍÑ•µ}ÁÉ½É…´èéíÍ•±˜°QÉ…¹Í™•Éôì)ÕÍ”…¹¡½É}ÍÁ°èé…ÍÍ½¥…Ñ•‘}Ñ½­•¸èéÍÍ½¥…Ñ•‘Q½­•¸ì)ÕÍ”…¹¡½É}ÍÁ°èéÑ½­•¸èéíÍ•±˜°5¥¹Ğ°Q½­•¸°Q½­•¹½Õ¹Ğ°QÉ…¹Í™•É¡•­•‘ôì)ÕÍ”Í½±…¹…}Í¡„ÈÔÙ}¡…Í¡•Èèé¡…Í ì()‘•±…É•}¥„ ‰ÕÑÁUY¹	¹AÅ…	ÁU©!UÑˆå‰É¬ÍÅ½AiMU©I‘ÍQ¡ĞÈˆ¤ì()½¹ÍĞUM}Y9PèAÕ‰­•ä€ôÁÕ‰­•ä„ ˆÑé55åÍÉĞÕI¤Õ`ÄÑa¡…!¥¤Í¹AIeA)i)¹Tˆ¤ì)½¹ÍĞUM}5%99PèAÕ‰­•ä€ôÁÕ‰­•ä„ ‰A©]‘ÕÕ™ÅMMÅ•4ÉÄÉáéå‰…ÁáÑİ­iİåQĞÅØˆ¤ì)½¹ÍĞUM}%51LèÔà€ô€Øì)½¹ÍĞ5a}1%Q%5}M=9Lè¤ØĞ€ô€ÌØÔ€¨€ÈĞ€¨€ØÀ€¨€ØÀì((mÁÉ½É…µt)ÁÕˆµ½Í½±¥™Ñ}•ÍÉ½Üì(€€€ÕÍ”ÍÕÁ•Èèè¨ì((€€€€¼¼¼É•…Ñ•Ì„¥™ĞA…¹ÑÉ…¹Í™•ÉÌÑ¡”¥™Ğ…µ½Õ¹Ğ¥¹Ñ¼¥Ğ¸(€€€ÁÕˆ™¸É•…Ñ•}Í½±}¥™Ğ (€€€€€€€Ñàè½¹Ñ•áĞñÉ•…Ñ•M½±¥™Ğø°(€€€€€€€¥™Ñ}¡…Í èmÔàì€ÌÉt°(€€€€€€€…µ½Õ¹Ñ}±…µÁ½ÉÑÌèÔØĞ°(€€€€€€€•áÁ¥É•Í}…Ğè¤ØĞ°(€€€€¤€´øI•ÍÕ±Ğğ ¤øì(€€€€€€€Ù…±¥‘…Ñ•}¹•İ}¥™Ğ ™¥™Ñ}¡…Í °…µ½Õ¹Ñ}±…µÁ½ÉÑÌ°•áÁ¥É•Í}…Ğ¤üì(€€€€€€€¥¹¥Ñ¥…±¥é•}¥™Ğ (€€€€€€€€€€€€™µÕĞÑà¹…½Õ¹ÑÌ¹¥™Ğ°(€€€€€€€€€€€Ñà¹…½Õ¹ÑÌ¹É•…Ñ½È¹­•ä ¤°(€€€€€€€€€€€¥™Ñ}¡…Í °(€€€€€€€€€€€ÍÍ•ĞèéM½°°(€€€€€€€€€€€AÕ‰­•äèé‘•™…Õ±Ğ ¤°(€€€€€€€€€€€…µ½Õ¹Ñ}±…µÁ½ÉÑÌ°(€€€€€€€€€€€•áÁ¥É•Í}…Ğ°(€€€€€€€€€€€Ñà¹‰ÕµÁÌ¹¥™Ğ°(€€€€€€€€¤üì((€€€€€€€ÍåÍÑ•µ}ÁÉ½É…´èéÑÉ…¹Í™•È (€€€€€€€€€€€Á¥½¹Ñ•áĞèé¹•Ü (€€€€€€€€€€€€€€€MåÍÑ•´èé¥ ¤°(€€€€€€€€€€€€€€€QÉ…¹Í™•Èì(€€€€€€€€€€€€€€€€€€€™É½´èÑà¹…½Õ¹ÑÌ¹É•…Ñ½È¹Ñ½}…½Õ¹Ñ}¥¹™¼ ¤°(€€€€€€€€€€€€€€€€€€€Ñ¼èÑà¹…½Õ¹ÑÌ¹¥™Ğ¹Ñ½}…½Õ¹Ñ}¥¹™¼ ¤°(€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€¤°(€€€€€€€€€€€…µ½Õ¹Ñ}±…µÁ½ÉÑÌ°(€€€€€€€€¤üì((€€€€€€€•µ¥Ğ„¡¥™ÑÉ•…Ñ•ì(€€€€€€€€€€€¥™ĞèÑà¹…½Õ¹ÑÌ¹¥™Ğ¹­•ä ¤°(€€€€€€€€€€€É•…Ñ½ÈèÑà¹…½Õ¹ÑÌ¹É•…Ñ½È¹­•ä ¤°(€€€€€€€€€€€¥™Ñ}¡…Í °(€€€€€€€€€€€…ÍÍ•ĞèÍÍ•ĞèéM½°°(€€€€€€€€€€€µ¥¹ĞèAÕ‰­•äèé‘•™…Õ±Ğ ¤°(€€€€€€€€€€€…µ½Õ¹Ğè…µ½Õ¹Ñ}±…µÁ½ÉÑÌ°(€€€€€€€€€€€•áÁ¥É•Í}…Ğ°(€€€€€€€ô¤ì(€€€€€€€=¬  ¤¤(€€€ô((€€€€¼¼¼É•…Ñ•Ì„UM¥™Ğ¸=¹±äÑ¡”…¹½¹¥…°‘•Ù¹•Ğ…¹µ…¥¹¹•ĞUMµ¥¹ÑÌ…É”…•ÁÑ•¸(€€€ÁÕˆ™¸É•…Ñ•}ÕÍ‘}¥™Ğ (€€€€€€€Ñàè½¹Ñ•áĞñÉ•…Ñ•UÍ‘¥™Ğø°(€€€€€€€¥™Ñ}¡…Í èmÔàì€ÌÉt°(€€€€€€€…µ½Õ¹ĞèÔØĞ°(€€€€€€€•áÁ¥É•Í}…Ğè¤ØĞ°(€€€€¤€´øI•ÍÕ±Ğğ ¤øì(€€€€€€€Ù…±¥‘…Ñ•}¹•İ}¥™Ğ ™¥™Ñ}¡…Í °…µ½Õ¹Ğ°•áÁ¥É•Í}…Ğ¤üì(€€€€€€€Ù…±¥‘…Ñ•}ÕÍ‘}µ¥¹Ğ ™Ñà¹…½Õ¹ÑÌ¹µ¥¹Ğ¤üì(€€€€€€€¥¹¥Ñ¥…±¥é•}¥™Ğ (€€€€€€€€€€€€™µÕĞÑà¹…½Õ¹ÑÌ¹¥™Ğ°(€€€€€€€€€€€Ñà¹…½Õ¹ÑÌ¹É•…Ñ½È¹­•ä ¤°(€€€€€€€€€€€¥™Ñ}¡…Í °(€€€€€€€€€€€ÍÍ•ĞèéUÍ‘Œ°(€€€€€€€€€€€Ñà¹…½Õ¹ÑÌ¹µ¥¹Ğ¹­•ä ¤°(€€€€€€€€€€€…µ½Õ¹Ğ°(€€€€€€€€€€€•áÁ¥É•Í}…Ğ°(€€€€€€€€€€€Ñà¹‰ÕµÁÌ¹¥™Ğ°(€€€€€€€€¤üì((€€€€€€€Ñ½­•¸èéÑÉ…¹Í™•É}¡•­• (€€€€€€€€€€€Á¥½¹Ñ•áĞèé¹•Ü (€€€€€€€€€€€€€€€Q½­•¸èé¥ ¤°(€€€€€€€€€€€€€€€QÉ…¹Í™•É¡•­•ì(€€€€€€€€€€€€€€€€€€€™É½´èÑà¹…½Õ¹ÑÌ¹É•…Ñ½É}Ñ½­•¸¹Ñ½}…½Õ¹Ñ}¥¹™¼ ¤°(€€€€€€€€€€€€€€€€€€€µ¥¹ĞèÑà¹…½Õ¹ÑÌ¹µ¥¹Ğ¹Ñ½}…½Õ¹Ñ}¥¹™¼ ¤°(€€€€€€€€€€€€€€€€€€€Ñ¼èÑà¹…½Õ¹ÑÌ¹Ù…Õ±Ğ¹Ñ½}…½Õ¹Ñ}¥¹™¼ ¤°(€€€€€€€€€€€€€€€€€€€…ÕÑ¡½É¥ÑäèÑà¹…½Õ¹ÑÌ¹É•…Ñ½È¹Ñ½}…½Õ¹Ñ}¥¹™¼ ¤°(€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€¤°(€€€€€€€€€€€…µ½Õ¹Ğ°(€€€€€€€€€€€UM}%51L°(€€€€€€€€¤üì((€€€€€€€•µ¥Ğ„¡¥™ÑÉ•…Ñ•ì(€€€€€€€€€€€¥™ĞèÑà¹…½Õ¹ÑÌ¹¥™Ğ¹­•ä ¤°(€€€€€€€€€€€É•…Ñ½ÈèÑà¹…½Õ¹ÑÌ¹É•…Ñ½È¹­•ä ¤°(€€€€€€€€€€€¥™Ñ}¡…Í °(€€€€€€€€€€€…ÍÍ•ĞèÍÍ•ĞèéUÍ‘Œ°(€€€€€€€€€€€µ¥¹ĞèÑà¹…½Õ¹ÑÌ¹µ¥¹Ğ¹­•ä ¤°(€€€€€€€€€€€…µ½Õ¹Ğ°(€€€€€€€€€€€•áÁ¥É•Í}…Ğ°(€€€€€€€ô¤ì(€€€€€€€=¬  ¤¤(€€€ô((€€€€¼¼¼1•ÑÌÑ¡”™¥ÉÍĞİ…±±•Ğ¡½±‘¥¹œÑ¡”‰•…É•È±¥¹¬±…¥´Ñ¡”¥™Ğ‰•™½É”•áÁ¥Éä¸(€€€ÁÕˆ™¸±…¥µ}Í½±}¥™Ğ (€€€€€€€Ñàè½¹Ñ•áĞñ±…¥µM½±¥™Ğø°(€€€€€€€¥™Ñ}¡…Í èmÔàì€ÌÉt°(€€€€€€€¥™Ñ}Í•É•ĞèmÔàì€ÌÉt°(€€€€¤€´øI•ÍÕ±Ğğ ¤øì(€€€€€€€±•Ğ¹½Ü€ô±½¬èé•Ğ ¤ü¹Õ¹¥á}Ñ¥µ•ÍÑ…µÀì(€€€€€€€±•Ğ¥™Ğ€ô€™µÕĞÑà¹…½Õ¹ÑÌ¹¥™Ğì(€€€€€€€Ù…±¥‘…Ñ•}Í•É•Ğ¡¥™Ğ°€™¥™Ñ}¡…Í °€™¥™Ñ}Í•É•Ğ¤üì(€€€€€€€Ù…±¥‘…Ñ•}±…¥´¡¥™Ğ°ÍÍ•ĞèéM½°°¹½Ü¤üì(€€€€€€€±•Ğ…µ½Õ¹Ğ€ôÑÉ…¹Í™•É}±…µÁ½ÉÑÍ}™É½µ}¥™Ğ (€€€€€€€€€€€¥™Ğ°(€€€€€€€€€€€€™Ñà¹…½Õ¹ÑÌ¹É•¥Á¥•¹Ğ¹Ñ½}…½Õ¹Ñ}¥¹™¼ ¤°(€€€€€€€€€€€¥™Ğ¹…µ½Õ¹Ğ°(€€€€€€€€¤üì(€€€€€€€¥™Ğ¹É•¥Á¥•¹Ğ€ôM½µ”¡Ñà¹…½Õ¹ÑÌ¹É•¥Á¥•¹Ğ¹­•ä ¤¤ì(€€€€€€€¥™Ğ¹ÍÑ…ÑÕÌ€ô¥™ÑMÑ…ÑÕÌèé±…¥µ•ì(€€€€€€€•µ¥Ğ„¡¥™Ñ±…¥µ•ì(€€€€€€€€€€€¥™Ğè¥™Ğ¹­•ä ¤°(€€€€€€€€€€€É•¥Á¥•¹ĞèÑà¹…½Õ¹ÑÌ¹É•¥Á¥•¹Ğ¹­•ä ¤°(€€€€€€€€€€€…ÍÍ•ĞèÍÍ•ĞèéM½°°(€€€€€€€€€€€µ¥¹ĞèAÕ‰­•äèé‘•™…Õ±Ğ ¤°(€€€€€€€€€€€…µ½Õ¹Ğ°(€€€€€€€ô¤ì(€€€€€€€=¬  ¤¤(€€€ô((€€€€¼¼¼1•ÑÌÑ¡”™¥ÉÍĞİ…±±•Ğ¡½±‘¥¹œÑ¡”‰•…É•È±¥¹¬±…¥´Ñ¡”UM¥™Ğ‰•™½É”•áÁ¥Éä¸(€€€ÁÕˆ™¸±…¥µ}ÕÍ‘}¥™Ğ (€€€€€€€Ñàè½¹Ñ•áĞñ±…¥µUÍ‘¥™Ğø°(€€€€€€€¥™Ñ}¡…Í èmÔàì€ÌÉt°(€€€€€€€¥™Ñ}Í•É•ĞèmÔàì€ÌÉt°(€€€€¤€´øI•ÍÕ±Ğğ ¤øì(€€€€€€€±•Ğ¹½Ü€ô±½¬èé•Ğ ¤ü¹Õ¹¥á}Ñ¥µ•ÍÑ…µÀì(€€€€€€€±•Ğ¥™Ğ€ô€™µÕĞÑà¹…½Õ¹ÑÌ¹¥™Ğì(€€€€€€€Ù…±¥‘…Ñ•}Í•É•Ğ¡¥™Ğ°€™¥™Ñ}¡…Í °€™¥™Ñ}Í•É•Ğ¤üì(€€€€€€€Ù…±¥‘…Ñ•}±…¥´¡¥™Ğ°ÍÍ•ĞèéUÍ‘Œ°¹½Ü¤üì(€€€€€€€Ù…±¥‘…Ñ•}ÕÍ‘}µ¥¹Ğ ™Ñà¹…½Õ¹ÑÌ¹µ¥¹Ğ¤üì(€€€€€€€É•ÅÕ¥É”„ (€€€€€€€€€€€Ñà¹…½Õ¹ÑÌ¹Ù…Õ±Ğ¹…µ½Õ¹Ğ€øô¥™Ğ¹…µ½Õ¹Ğ°(€€€€€€€€€€€ÍÉ½İÉÉ½Èèé%¹ÍÕ™™¥¥•¹ÑÍÉ½Ü(€€€€€€€€¤ì(€€€€€€€±•Ğ…µ½Õ¹Ğ€ôÑà¹…½Õ¹ÑÌ¹Ù…Õ±Ğ¹…µ½Õ¹Ğì(€€€€€€€±•Ğ‰ÕµÁ}Í••€ôm¥™Ğ¹‰ÕµÁtì(€€€€€€€±•Ğ¥™Ñ}Í••‘Ìè€™l™mÔáut€ô€™l(€€€€€€€€€€€ˆ‰¥™Ğˆ°(€€€€€€€€€€€Ñà¹…½Õ¹ÑÌ¹É•…Ñ½È¹­•ä¹…Í}É•˜ ¤°(€€€€€€€€€€€€™¥™Ñ}¡…Í °(€€€€€€€€€€€€™‰ÕµÁ}Í••°(€€€€€€€tì(€€€€€€€±•ĞÍ¥¹•É}Í••‘Ì€ô€™m¥™Ñ}Í••‘Ítì(€€€€€€€Ñ½­•¸èéÑÉ…¹Í™•É}¡•­• (€€€€€€€€€€€Á¥½¹Ñ•áĞèé¹•Ü (€€€€€€€€€€€€€€€Q½­•¸èé¥ ¤°(€€€€€€€€€€€€€€€QÉ…¹Í™•É¡•­•ì(€€€€€€€€€€€€€€€€€€€™É½´èÑà¹…½Õ¹ÑÌ¹Ù…Õ±Ğ¹Ñ½}…½Õ¹Ñ}¥¹™¼ ¤°(€€€€€€€€€€€€€€€€€€€µ¥¹ĞèÑà¹…½Õ¹ÑÌ¹µ¥¹Ğ¹Ñ½}…½Õ¹Ñ}¥¹™¼ ¤°(€€€€€€€€€€€€€€€€€€€Ñ¼èÑà¹…½Õ¹ÑÌ¹É•¥Á¥•¹Ñ}Ñ½­•¸¹Ñ½}…½Õ¹Ñ}¥¹™¼ ¤°(€€€€€€€€€€€€€€€€€€€…ÕÑ¡½É¥Ñäè¥™Ğ¹Ñ½}…½Õ¹Ñ}¥¹™¼ ¤°(€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€¤(€€€€€€€€€€€€¹İ¥Ñ¡}Í¥¹•È¡Í¥¹•É}Í••‘Ì¤°(€€€€€€€€€€€…µ½Õ¹Ğ°(€€€€€€€€€€€UM}%51L°(€€€€€€€€¤üì(€€€€€€€¥™Ğ¹É•¥Á¥•¹Ğ€ôM½µ”¡Ñà¹…½Õ¹ÑÌ¹É•¥Á¥•¹Ğ¹­•ä ¤¤ì(€€€€€€€¥™Ğ¹ÍÑ…ÑÕÌ€ô¥™ÑMÑ…ÑÕÌèé±…¥µ•ì(€€€€€€€•µ¥Ğ„¡¥™Ñ±…¥µ•ì(€€€€€€€€€€€¥™Ğè¥™Ğ¹­•ä ¤°(€€€€€€€€€€€É•¥Á¥•¹ĞèÑà¹…½Õ¹ÑÌ¹É•¥Á¥•¹Ğ¹­•ä ¤°(€€€€€€€€€€€…ÍÍ•ĞèÍÍ•ĞèéUÍ‘Œ°(€€€€€€€€€€€µ¥¹ĞèÑà¹…½Õ¹ÑÌ¹µ¥¹Ğ¹­•ä ¤°(€€€€€€€€€€€…µ½Õ¹Ğ°(€€€€€€€ô¤ì(€€€€€€€=¬  ¤¤(€€€ô((€€€€¼¼¼I•ÑÕÉ¹Ì„M=0¥™ĞÑ¼¥ÑÌÉ•…Ñ½È½¹±ä…™Ñ•È¥ÑÌ•áÁ¥ÉäÑ¥µ•ÍÑ…µÀ¸(€€€ÁÕˆƒm}öÚ$z{-®éÜj×ator's canonical ATA if they closed it while the gift was active.
+use anchor_lang::prelude::*;
+use anchor_lang::system_program::{self, Transfer};
+use anchor_spl::associated_token::AssociatedToken;
+use anchor_spl::token::{self, Mint, Token, TokenAccount, TransferChecked};
+use solana_sha256_hasher::hash;
+
+declare_id!("A5cFtpUVnBncPqaBpUjHUtb9brk3qoPZSUjRdD3DTht2");
+
+const USDC_DEVNET: Pubkey = pubkey!("4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU");
+const USDC_MAINNET: Pubkey = pubkey!("EPjFWdd5AufqSSqeM2q2xzybapC8G4wEGGkZwyTDt1v");
+const USDC_DECIMALS: u8 = 6;
+const MAX_LIFETIME_SECONDS: i64 = 365 * 24 * 60 * 60;
+
+#[program]
+pub mod solgift_escrow {
+    use super::*;
+
+    /// Creates a gift PDA and transfers the gift amount into it.
+    pub fn create_sol_gift(
+        ctx: Context<CreateSolGift>,
+        gift_hash: [u8; 32],
+        amount_lamports: u64,
+        expires_at: i64,
+    ) -> Result<()> {
+        validate_new_gift(&gift_hash, amount_lamports, expires_at)?;
+        initialize_gift(
+            &mut ctx.accounts.gift,
+            ctx.accounts.creator.key(),
+            gift_hash,
+            Asset::Sol,
+            Pubkey::default(),
+            amount_lamports,
+            expires_at,
+            ctx.bumps.gift,
+        )?;
+
+        system_program::transfer(
+            CpiContext::new(
+                System::id(),
+                Transfer {
+                    from: ctx.accounts.creator.to_account_info(),
+                    to: ctx.accounts.gift.to_account_info(),
+                },
+            ),
+            amount_lamports,
+        )?;
+
+        emit!(GiftCreated {
+            gift: ctx.accounts.gift.key(),
+            creator: ctx.accounts.creator.key(),
+            gift_hash,
+            asset: Asset::Sol,
+            mint: Pubkey::default(),
+            amount: amount_lamports,
+            expires_at,
+        });
+        Ok(())
+    }
+
+    /// Creates a USDC gift. Only the canonical devnet and mainnet USDC mints are accepted.
+    pub fn create_usdc_gift(
+        ctx: Context<CreateUsdcGift>,
+        gift_hash: [u8; 32],
+        amount: u64,
+        expires_at: i64,
+    ) -> Result<()> {
+        validate_new_gift(&gift_hash, amount, expires_at)?;
+        validate_usdc_mint(&ctx.accounts.mint)?;
+        initialize_gift(
+            &mut ctx.accounts.gift,
+            ctx.accounts.creator.key(),
+            gift_hash,
+            Asset::Usdc,
+            ctx.accounts.mint.key(),
+            amount,
+            expires_at,
+            ctx.bumps.gift,
+        )?;
+
+        token::transfer_checked(
+            CpiContext::new(
+                Token::id(),
+                TransferChecked {
+                    from: ctx.accounts.creator_token.to_account_info(),
+                    mint: ctx.accounts.mint.to_account_info(),
+                    to: ctx.accounts.vault.to_account_info(),
+                    authority: ctx.accounts.creator.to_account_info(),
+                },
+            ),
+            amount,
+            USDC_DECIMALS,
+        )?;
+
+        emit!(GiftCreated {
+            gift: ctx.accounts.gift.key(),
+            creator: ctx.accounts.creator.key(),
+            gift_hash,
+            asset: Asset::Usdc,
+            mint: ctx.accounts.mint.key(),
+            amount,
+            expires_at,
+        });
+        Ok(())
+    }
+
+    /// Lets the first wallet holding the bearer link claim the gift before expiry.
+    pub fn claim_sol_gift(
+        ctx: Context<ClaimSolGift>,
+        gift_hash: [u8; 32],
+        gift_secret: [u8; 32],
+    ) -> Result<()> {
+        let now = Clock::get()?.unix_timestamp;
+        let gift = &mut ctx.accounts.gift;
+        validate_secret(gift, &gift_hash, &gift_secret)?;
+        validate_claim(gift, Asset::Sol, now)?;
+        let amount = transfer_lamports_from_gift(
+            gift,
+            &ctx.accounts.recipient.to_account_info(),
+            gift.amount,
+        )?;
+        gift.recipient = Some(ctx.accounts.recipient.key());
+        gift.status = GiftStatus::Claimed;
+        emit!(GiftClaimed {
+            gift: gift.key(),
+            recipient: ctx.accounts.recipient.key(),
+            asset: Asset::Sol,
+            mint: Pubkey::default(),
+            amount,
+        });
+        Ok(())
+    }
+
+    /// Lets the first wallet holding the bearer link claim the USDC gift before expiry.
+    pub fn claim_usdc_gift(
+        ctx: Context<ClaimUsdcGift>,
+        gift_hash: [u8; 32],
+        gift_secret: [u8; 32],
+    ) -> Result<()> {
+        let now = Clock::get()?.unix_timestamp;
+        let gift = &mut ctx.accounts.gift;
+        validate_secret(gift, &gift_hash, &gift_secret)?;
+        validate_claim(gift, Asset::Usdc, now)?;
+        validate_usdc_mint(&ctx.accounts.mint)?;
+        require!(
+            ctx.accounts.vault.amount >= gift.amount,
+            EscrowError::InsufficientEscrow
+        );
+        let amount = ctx.accounts.vault.amount;
+        let bump_seed = [gift.bump];
+        let gift_seeds: &[&[u8]] = &[
+            b"gift",
+            ctx.accounts.creator.key.as_ref(),
+            &gift_hash,
+            &bump_seed,
+        ];
+        let signer_seeds = &[gift_seeds];
+        token::transfer_checked(
+            CpiContext::new(
+                Token::id(),
+                TransferChecked {
+                    from: ctx.accounts.vault.to_account_info(),
+                    mint: ctx.accounts.mint.to_account_info(),
+                    to: ctx.accounts.recipient_token.to_account_info(),
+                    authority: gift.to_account_info(),
+                },
+            )
+            .with_signer(signer_seeds),
+            amount,
+            USDC_DECIMALS,
+        )?;
+        gift.recipient = Some(ctx.accounts.recipient.key());
+        gift.status = GiftStatus::Claimed;
+        emit!(GiftClaimed {
+            gift: gift.key(),
+            recipient: ctx.accounts.recipient.key(),
+            asset: Asset::Usdc,
+            mint: ctx.accounts.mint.key(),
+            amount,
+        });
+        Ok(())
+    }
+
+    /// Returns a SOL gift to its creator only after its expiry timestamp.
+    pub fn refund_expired_sol_gift(
+        ctx: Context<RefundExpiredSolGift>,
+        gift_hash: [u8; 32],
+    ) -> Result<()> {
+        let _ = gift_hash;
+        let now = Clock::get()?.unix_timestamp;
+        let gift = &mut ctx.accounts.gift;
+        validate_refund(gift, Asset::Sol, now)?;
+        let amount = transfer_lamports_from_gift(
+            gift,
+            &ctx.accounts.creator.to_account_info(),
+            gift.amount,
+        )?;
+        gift.status = GiftStatus::Refunded;
+        emit!(GiftRefunded {
+            gift: gift.key(),
+            creator: ctx.accounts.creator.key(),
+            asset: Asset::Sol,
+            mint: Pubkey::default(),
+            amount,
+        });
+        Ok(())
+    }
+
+    /// Returns a USDC gift to its creator only after its expiry timestamp.
+    pub fn refund_expired_usdc_gift(
+        ctx: Context<RefundExpiredUsdcGift>,
+        gift_hash: [u8; 32],
+    ) -> Result<()> {
+        let _ = gift_hash;
+        let now = Clock::get()?.unix_timestamp;
+        let gift = &mut ctx.accounts.gift;
+        validate_refund(gift, Asset::Usdc, now)?;
+        validate_usdc_mint(&ctx.accounts.mint)?;
+        require!(
+            ctx.accounts.vault.amount >= gift.amount,
+            EscrowError::InsufficientEscrow
+        );
+        let amount = ctx.accounts.vault.amount;
+        let bump_seed = [gift.bump];
+        let gift_seeds: &[&[u8]] = &[
+            b"gift",
+            ctx.accounts.creator.key.as_ref(),
+            &gift_hash,
+            &bump_seed,
+        ];
+        let signer_seeds = &[gift_seeds];
+        token::transfer_checked(
+            CpiContext::new(
+                Token::id(),
+                TransferChecked {
+                    from: ctx.accounts.vault.to_account_info(),
+                    mint: ctx.accounts.mint.to_account_info(),
+                    to: ctx.accounts.creator_token.to_account_info(),
+                    authority: gift.to_account_info(),
+                },
+            )
+            .with_signer(signer_seeds),
+            amount,
+            USDC_DECIMALS,
+        )?;
+        gift.status = GiftStatus::Refunded;
+        emit!(GiftRefunded {
+            gift: gift.key(),
+            creator: ctx.accounts.creator.key(),
+            asset: Asset::Usdc,
+            mint: ctx.accounts.mint.key(),
+            amount,
+        });
+        Ok(())
+    }
+}
+
+#[derive(Accounts)]
+#[instruction(gift_hash: [u8; 32])]
+pub struct CreateSolGift<'info> {
+    #[account(mut)]
+    pub creator: Signer<'info>,
+    #[account(
+        init,
+        payer = creator,
+        space = Gift::SPACE,
+        seeds = [b"gift", creator.key().as_ref(), gift_hash.as_ref()],
+        bump
+    )]
+    pub gift: Account<'info, Gift>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+#[instruction(gift_hash: [u8; 32])]
+pub struct CreateUsdcGift<'info> {
+    #[account(mut)]
+    pub creator: Signer<'info>,
+    #[account(
+        init,
+        payer = creator,
+        space = Gift::SPACE,
+        seeds = [b"gift", creator.key().as_ref(), gift_hash.as_ref()],
+        bump
+    )]
+    pub gift: Account<'info, Gift>,
+    pub mint: Account<'info, Mint>,
+    #[account(
+        mut,
+        associated_token::mint = mint,
+        associated_token::authority = creator,
+        associated_token::token_program = token_program
+    )]
+    pub creator_token: Account<'info, TokenAccount>,
+    #[account(
+        init,
+        payer = creator,
+        associated_token::mint = mint,
+        associated_token::authority = gift,
+        associated_token::token_program = token_program
+    )]
+    pub vault: Account<'info, TokenAccount>,
+    pub token_program: Program<'info, Token>,
+    pub associated_token_program: Program<'info, AssociatedToken>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+#[instruction(gift_hash: [u8; 32], gift_secret: [u8; 32])]
+pub struct ClaimSolGift<'info> {
+    /// CHECK: Used only as a PDA seed and checked against gift.creator by has_one.
+    pub creator: UncheckedAccount<'info>,
+    #[account(
+        mut,
+        seeds = [b"gift", creator.key().as_ref(), gift_hash.as_ref()],
+        bump = gift.bump,
+        has_one = creator
+    )]
+    pub gift: Account<'info, Gift>,
+    #[account(mut)]
+    pub recipient: Signer<'info>,
+}
+
+#[derive(Accounts)]
+#[instruction(gift_hash: [u8; 32], gift_secret: [u8; 32])]
+pub struct ClaimUsdcGift<'info> {
+    /// CHECK: Used only as a PDA seed and checked against gift.creator by has_one.
+    pub creator: UncheckedAccount<'info>,
+    #[account(
+        mut,
+        seeds = [b"gift", creator.key().as_ref(), gift_hash.as_ref()],
+        bump = gift.bump,
+        has_one = creator
+    )]
+    pub gift: Account<'info, Gift>,
+    #[account(mut)]
+    pub recipient: Signer<'info>,
+    #[account(address = gift.mint)]
+    pub mint: Account<'info, Mint>,
+    #[account(
+        mut,
+        associated_token::mint = mint,
+        associated_token::authority = gift,
+        associated_token::token_program = token_program
+    )]
+    pub vault: Account<'info, TokenAccount>,
+    // Safe init_if_needed use: the account is the canonical ATA derived from this signer and mint.
+    #[account(
+        init_if_needed,
+        payer = recipient,
+        associated_token::mint = mint,
+        associated_token::authority = recipient,
+        associated_token::token_program = token_program
+    )]
+    pub recipient_token: Account<'info, TokenAccount>,
+    pub token_program: Program<'info, Token>,
+    pub associated_token_program: Program<'info, AssociatedToken>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+#[instruction(gift_hash: [u8; 32])]
+pub struct RefundExpiredSolGift<'info> {
+    #[account(mut)]
+    pub creator: Signer<'info>,
+    #[account(
+        mut,
+        seeds = [b"gift", creator.key().as_ref(), gift_hash.as_ref()],
+        bump = gift.bump,
+        has_one = creator
+    )]
+    pub gift: Account<'info, Gift>,
+}
+
+#[derive(Accounts)]
+#[instruction(gift_hash: [u8; 32])]
+pub struct RefundExpiredUsdcGift<'info> {
+    #[account(mut)]
+    pub creator: Signer<'info>,
+    #[account(
+        mut,
+        seeds = [b"gift", creator.key().as_ref(), gift_hash.as_ref()],
+        bump = gift.bump,
+        has_one = creator
+    )]
+    pub gift: Account<'info, Gift>,
+    #[account(address = gift.mint)]
+    pub mint: Account<'info, Mint>,
+    #[account(
+        mut,
+        associated_token::mint = mint,
+        associated_token::authority = gift,
+        associated_token::token_program = token_program
+    )]
+    pub vault: Account<'info, TokenAccount>,
+    // Recreate the creator's canonical ATA if they closed it while the gift was active.
     #[account(
         init_if_needed,
         payer = creator,

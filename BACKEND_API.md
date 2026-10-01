@@ -18,7 +18,8 @@ Request:
   "amount": 0.25,
   "currency": "SOL",
   "templateId": "birthday",
-  "message": "Поздравление"
+  "message": "Поздравление",
+  "secretWord": "секретная фраза из нескольких слов"
 }
 ```
 
@@ -31,6 +32,7 @@ Response:
 ```
 
 The API must validate the request, choose a cluster-specific escrow destination, and associate it with a short-lived intent. The destination should be unique per intent, especially for SOL, so incoming transfers can be attributed without ambiguity. For USDC, the frontend creates/transfers to the destination's associated token account.
+The secret word is normalized, salted, and derived with scrypt plus a server-only pepper. Plaintext is never stored. Require at least 12 characters, rate-limit failed claims persistently, and tell the sender to share the phrase separately from the link.
 
 ### `POST /api/escrow/create`
 
@@ -70,7 +72,8 @@ Request:
 ```json
 {
   "voucherId": "escrow_abc123xyz",
-  "recipientAddress": "base58 public key"
+  "recipientAddress": "base58 public key",
+  "secretWord": "секретная фраза из нескольких слов"
 }
 ```
 
@@ -80,11 +83,12 @@ Response:
 { "txHash": "confirmed or submitted Solana transaction signature" }
 ```
 
-The backend must atomically reserve each eligible voucher, validate the recipient address, submit the payout, and make retries idempotent. The frontend waits for the returned transaction to confirm before displaying “Успешно выплачено”.
+The backend must validate the secret word before atomically reserving each eligible voucher, validate the recipient address, submit the payout, and make retries idempotent. Limit attempts per voucher using persistent storage (the current routes allow eight attempts per 15 minutes). The frontend waits for the returned transaction to confirm before displaying “Успешно выплачено”.
 
 ## Security and operations
 
-- A link containing only a voucher ID is a bearer link if the API allows whoever opens it to claim. Use a high-entropy, unguessable ID or add a separate claim secret; never treat a sequential database ID as authorization.
+- A link containing only a voucher ID is not sufficient to claim in the updated API: the recipient must also supply the separate secret phrase. Share the phrase through a different channel; anyone who gets both can claim.
+- The current API protects the existing custodial MVP. The Anchor program is not connected to the site and does not yet enforce this passphrase or a server-authorized claim permit; do not deploy it for real funds until that claim flow is implemented and reviewed.
 - Keep signing keys in a secrets manager or use a reviewed on-chain program. Never put private keys in the frontend, browser storage, URLs, or `VITE_*` variables.
 - Verify chain, token mint, amount, sender and destination from transaction data; do not trust client-submitted metadata.
 - Apply replay protection, idempotency, rate limits, and origin/authentication controls.
@@ -105,3 +109,5 @@ Set these server-only Vercel variables before using the API:
 - `ESCROW_FEE_PAYER_SECRET_KEY` — base58-encoded 64-byte Solana keypair secret (JSON byte arrays are also accepted for compatibility)
 
 Never prefix these secrets with `VITE_`. The public frontend API base defaults to the current site origin, so Vercel serves `/api/escrow/*` on the same HTTPS domain. The fee payer needs devnet SOL before claim transactions can succeed. The local `backend/server.js` remains a devnet-only file-backed development server and must not be used as the Vercel runtime.
+
+Keep `ESCROW_MASTER_KEY` stable and backed up: it encrypts escrow signers and derives the secret-word pepper. Existing vouchers created before secret-word protection have no verifier and are rejected by the updated claim route; resolve/recreate any such devnet vouchers before rollout.

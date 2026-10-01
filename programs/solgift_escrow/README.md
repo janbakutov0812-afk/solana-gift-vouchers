@@ -21,7 +21,7 @@ This directory is an Anchor workspace alongside the existing Vite app. Use Rust 
 NO_DNA=1 anchor build
 ```
 
-The program ID and matching deploy keypair have been generated for this checkout. The keypair is stored at `target/deploy/solgift_escrow-keypair.json` (ignored by Git); keep it backed up securely and never commit or share it. Rebuild the program with this keypair before deployment. The current prototype/serverless escrow remains unchanged until a separately reviewed frontend migration is made.
+The program ID and matching deploy keypair have been generated for this checkout. The keypair is stored at `target/deploy/solgift_escrow-keypair.json` (ignored by Git); keep it backed up securely and never commit or share it. Rebuild the program with this keypair before deployment. The current website/API now requires a separately shared secret phrase, but that check is not part of this Anchor program. The claim instructions below still use bearer-secret authorization; add and review an authorized claim flow before connecting the website or deploying this contract.
 
 ## Security boundary
 
