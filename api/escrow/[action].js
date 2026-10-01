@@ -195,7 +195,7 @@ async function verifyOnchainFunding(voucher, txHash) {
   const instruction = tx.transaction.message.instructions.find((item) => item.programId?.equals(SOLGIFT_PROGRAM_ID)
     && item.accounts?.some((account) => account.equals(new PublicKey(expectedGift))))
   if (!instruction) throw new Error('Transaction does not contain the Solgift program instruction')
-  const data = bs58.decode(instruction.data)
+  const data = Buffer.from(bs58.decode(instruction.data))
   if (!data.subarray(0, 8).equals(expectedDiscriminator)
       || !data.subarray(8, 40).equals(giftHash)
       || data.readBigUInt64LE(40) !== expectedAmount) {
@@ -306,7 +306,7 @@ async function registerOnchainGift(body, { requireSecretPhrase }) {
   if (!signer) throw new Error('Transaction was not signed by senderAddress')
   const instruction = transaction.transaction.message.instructions.find((item) => item.programId?.equals(SOLGIFT_PROGRAM_ID))
   if (!instruction || typeof instruction.data !== 'string') throw new Error('Transaction does not contain the Solgift program instruction')
-  const data = bs58.decode(instruction.data)
+  const data = Buffer.from(bs58.decode(instruction.data))
   const isCreateInstruction = data.subarray(0, 8).equals(CREATE_SOL_DISCRIMINATOR)
     || data.subarray(0, 8).equals(CREATE_USDC_DISCRIMINATOR)
   if (!isCreateInstruction || data.length < 48) throw new Error('Transaction is not a valid gift creation')
