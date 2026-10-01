@@ -217,7 +217,8 @@ textarea { width: 100%; min-height: 68px; resize: vertical; padding: 12px 13px; 
 textarea:focus { border-color: rgba(153,69,255,.6); box-shadow: 0 0 0 3px rgba(153,69,255,.09); }
 textarea::placeholder { color: #595963; }
 .message-hint { margin-top: 6px; }
-.form-footer { display: flex; align-items: center; justify-content: space-between; gap: 15px; padding-top: 20px; margin-top: 20px; border-top: 1px solid rgba(255,255,255,.065); }
+.form-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 15px; padding-top: 20px; margin-top: 20px; border-top: 1px solid rgba(255,255,255,.065); }
+.devnet-note { flex: 0 0 100%; margin: 0; border: 1px solid rgba(255,190,95,.18); background: rgba(255,190,95,.055); border-radius: 10px; padding: 10px 12px; color: #e5c994; font-size: 10px; line-height: 1.55; }
 .secure-note { display: flex; align-items: center; gap: 7px; color: #84848e; font-size: 8px; }
 .secure-note svg { color: #73cba6; }
 .generate-button { min-height: 42px; padding: 0 15px; font-size: 9px; }

@@ -436,6 +436,7 @@ function CreatePage({ voucher, setVoucher, onGenerated, onToast }) {
           </div>
 
           <div className="form-footer">
+            <p className="devnet-note">Сайт работает в Solana Devnet. В Phantom включи «Тестовая сеть» и выбери «Solana Devnet», иначе кошелёк может не суметь проверить транзакцию.</p>
             <div className="secure-note"><LockKeyhole size={14} /><span>Приватный ключ остаётся у тебя</span></div>
             <Button onClick={generate} className="generate-button" disabled={isApiLoading || !Number(voucher.amount) || Number(voucher.amount) <= 0 || [...secretWord.trim()].length < 12 || secretWord !== secretWordConfirm}>
               {isApiLoading ? <><span className="spinner" /> Создаём открытку...</> : <>Сгенерировать ссылку <ArrowRight size={16} className="button-arrow" /></>}
