@@ -248,8 +248,17 @@ async function create(body) {
   requireDevnet()
   await ensureSchema()
   if (typeof body.txHash !== 'string' || body.txHash.length < 64 || body.txHash.length > 100) throw new Error('Invalid txHash')
-  const duplicate = await sql()`SELECT voucher_id FROM escrow_vouchers WHERE tx_hash = ${body.txHash} LIMIT 1`
-  if (duplicate.length) return { status: 'success', voucherId: duplicate[0].voucher_id }
+  const duplicate = await sql()`SELECT voucher_id, amount, currency, template_id, message
+    FROM escrow_vouchers WHERE tx_hash = ${body.txHash} LIMIT 1`
+  if (duplicate.length) return {
+    status: 'success', voucherId: duplicate[0].voucher_id, amount: Number(duplicate[0].amount),
+    currency: duplicate[0].currency, templateId: duplicate[0].template_id, message: duplicate[0].message,
+  }
+  const sender = address(body.senderAddress, 'sender').toBase58()
+  const transaction = await solana().getParsedTransaction(body.txHash, { commitment: 'confirmed', maxSupportedTransactionVersion: 0 })
+  if (transaction?.transaction.message.instructions.some((item) => item.programId?.equals(SOLGIFT_PROGRAM_ID))) {
+    return registerOnchainGift({ ...body, senderAddress: sender }, { requireSecretPhrase: false })
+  }
   const fields = validateVoucher(body)
   const candidates = body.voucherId
     ? await sql()`SELECT voucher_id, sender_address, amount, currency, template_id, message, escrow_address, onchain, gift_hash, secret_word_salt, secret_word_hash
@@ -280,11 +289,9 @@ async function create(body) {
   throw new Error('Escrow intent has already been used. Call prepare again.')
 }
 
-async function recover(body) {
-  requireDevnet()
-  await ensureSchema()
+async function registerOnchainGift(body, { requireSecretPhrase }) {
   if (typeof body.txHash !== 'string' || body.txHash.length < 64 || body.txHash.length > 100) throw new Error('Invalid txHash')
-  if (typeof body.secretWord !== 'string') throw new Error('Secret word is required')
+  if (requireSecretPhrase && typeof body.secretWord !== 'string') throw new Error('Secret word is required')
   const sender = address(body.senderAddress, 'sender').toBase58()
   const alreadyRegistered = await sql()`SELECT voucher_id, amount, currency, template_id, message
     FROM escrow_vouchers WHERE tx_hash = ${body.txHash} LIMIT 1`
@@ -308,13 +315,18 @@ async function recover(body) {
   if (!instruction.accounts?.some((account) => account.equals(escrowAddress))) {
     throw new Error('Gift account does not match the confirmed transaction')
   }
-  const candidates = await sql()`SELECT voucher_id, sender_address, amount, currency, template_id, message,
-      escrow_address, onchain, gift_hash, secret_word_salt, secret_word_hash
-    FROM escrow_vouchers WHERE status = 'prepared' AND onchain = true
-      AND sender_address = ${sender} AND escrow_address = ${escrowAddress.toBase58()} LIMIT 1`
+  const candidates = body.voucherId
+    ? await sql()`SELECT voucher_id, sender_address, amount, currency, template_id, message,
+        escrow_address, onchain, gift_hash, secret_word_salt, secret_word_hash
+      FROM escrow_vouchers WHERE voucher_id = ${body.voucherId} AND status = 'prepared' AND onchain = true
+        AND sender_address = ${sender} AND escrow_address = ${escrowAddress.toBase58()} LIMIT 1`
+    : await sql()`SELECT voucher_id, sender_address, amount, currency, template_id, message,
+        escrow_address, onchain, gift_hash, secret_word_salt, secret_word_hash
+      FROM escrow_vouchers WHERE status = 'prepared' AND onchain = true
+        AND sender_address = ${sender} AND escrow_address = ${escrowAddress.toBase58()} LIMIT 1`
   const voucher = candidates[0]
   if (!voucher) throw new Error('No prepared gift matches this transaction. Contact the site operator with the transaction signature.')
-  await verifyVoucherSecretPhrase(voucher, body.secretWord)
+  if (requireSecretPhrase || typeof body.secretWord === 'string') await verifyVoucherSecretPhrase(voucher, body.secretWord)
   await verifyOnchainFunding(voucher, body.txHash)
   const updated = await sql()`UPDATE escrow_vouchers SET tx_hash = ${body.txHash}, status = 'active', funded_at = now()
     WHERE voucher_id = ${voucher.voucher_id} AND status = 'prepared' AND tx_hash IS NULL RETURNING voucher_id`
@@ -323,9 +335,16 @@ async function recover(body) {
     if (!retried.length) throw new Error('Gift registration changed while recovery was in progress; retry once.')
   }
   return {
+    status: 'success',
     voucherId: voucher.voucher_id, amount: Number(voucher.amount), currency: voucher.currency,
     templateId: voucher.template_id, message: voucher.message,
   }
+}
+
+async function recover(body) {
+  requireDevnet()
+  await ensureSchema()
+  return registerOnchainGift(body, { requireSecretPhrase: true })
 }
 
 async function details(id) {
