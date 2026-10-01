@@ -263,6 +263,10 @@ textarea::placeholder { color: #595963; }
 .secure-note { display: flex; align-items: center; gap: 7px; color: #84848e; font-size: 8px; }
 .secure-note svg { color: #73cba6; }
 .generate-button { min-height: 42px; padding: 0 15px; font-size: 9px; }
+.registration-recovery { display: grid; gap: 9px; margin-top: 14px; padding: 12px; border: 1px solid rgba(255,179,99,.25); border-radius: 11px; background: rgba(255,163,91,.06); }
+.registration-recovery p { margin: 0; color: #f2c49c; font-size: 10px; line-height: 1.55; }
+.registration-recovery button { justify-self: start; padding: 8px 10px; color: #ffe0c1; border: 1px solid rgba(255,179,99,.28); border-radius: 8px; background: rgba(255,163,91,.1); font-size: 10px; font-weight: 650; cursor: pointer; }
+.registration-recovery button:disabled { opacity: .6; cursor: wait; }
 .spinner { width: 14px; height: 14px; border-radius: 50%; border: 2px solid rgba(7,17,12,.25); border-top-color: #08110d; animation: spin .65s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .preview-column { min-width: 0; }

@@ -145,6 +145,20 @@ function validateVoucher(body) {
   return { senderAddress: sender.toBase58(), amount, currency: body.currency, templateId: body.templateId, message: body.message }
 }
 
+async function verifyVoucherSecretPhrase(voucher, secretWord) {
+  const attempts = await sql()`UPDATE escrow_vouchers
+    SET secret_attempts = CASE WHEN secret_attempt_window < now() - interval '15 minutes' THEN 1 ELSE secret_attempts + 1 END,
+        secret_attempt_window = CASE WHEN secret_attempt_window < now() - interval '15 minutes' THEN now() ELSE secret_attempt_window END
+    WHERE voucher_id = ${voucher.voucher_id} RETURNING secret_attempts`
+  if (!attempts.length || Number(attempts[0].secret_attempts) > 8) {
+    throw new Error('Too many secret-word attempts; try again in 15 minutes')
+  }
+  const pepper = createHmac('sha256', masterKey()).update('solgift:secret-word-pepper:v1').digest()
+  if (!await verifySecretWord(secretWord, voucher.secret_word_salt, voucher.secret_word_hash, pepper)) {
+    throw new Error('Secret word is incorrect')
+  }
+}
+
 async function prepare(body) {
   requireDevnet()
   await ensureSchema()
@@ -237,15 +251,25 @@ async function create(body) {
   const duplicate = await sql()`SELECT voucher_id FROM escrow_vouchers WHERE tx_hash = ${body.txHash} LIMIT 1`
   if (duplicate.length) return { status: 'success', voucherId: duplicate[0].voucher_id }
   const fields = validateVoucher(body)
-  const candidates = await sql()`SELECT voucher_id, sender_address, amount, currency, template_id, message, escrow_address, onchain, gift_hash
-    FROM escrow_vouchers WHERE status = 'prepared' AND sender_address = ${fields.senderAddress}
-      AND currency = ${fields.currency} AND template_id = ${fields.templateId}
-      AND amount = ${fields.amount} AND message = ${fields.message}
-    ORDER BY created_at ASC LIMIT 10`
+  const candidates = body.voucherId
+    ? await sql()`SELECT voucher_id, sender_address, amount, currency, template_id, message, escrow_address, onchain, gift_hash, secret_word_salt, secret_word_hash
+        FROM escrow_vouchers WHERE voucher_id = ${body.voucherId} AND status = 'prepared'
+          AND sender_address = ${fields.senderAddress} AND currency = ${fields.currency}
+          AND template_id = ${fields.templateId} AND amount = ${fields.amount} AND message = ${fields.message} LIMIT 1`
+    : await sql()`SELECT voucher_id, sender_address, amount, currency, template_id, message, escrow_address, onchain, gift_hash, secret_word_salt, secret_word_hash
+        FROM escrow_vouchers WHERE status = 'prepared' AND sender_address = ${fields.senderAddress}
+          AND currency = ${fields.currency} AND template_id = ${fields.templateId}
+          AND amount = ${fields.amount} AND message = ${fields.message}
+        ORDER BY created_at ASC LIMIT 10`
   let selected
   let lastVerificationError
   for (const candidate of candidates) {
-    try { await verifyFunding(candidate, body.txHash); selected = candidate; break } catch (error) { lastVerificationError = error }
+    try {
+      if (typeof body.secretWord === 'string') await verifyVoucherSecretPhrase(candidate, body.secretWord)
+      await verifyFunding(candidate, body.txHash)
+      selected = candidate
+      break
+    } catch (error) { lastVerificationError = error }
   }
   if (!selected) throw lastVerificationError || new Error('No matching prepared escrow intent. Call prepare again.')
   const updated = await sql()`UPDATE escrow_vouchers SET tx_hash = ${body.txHash}, status = 'active', funded_at = now()
@@ -401,17 +425,7 @@ async function claim(body) {
   if (!voucher.secret_word_salt || !voucher.secret_word_hash) {
     throw new Error('This voucher predates secret-word protection and must be recreated')
   }
-  const attempts = await sql()`UPDATE escrow_vouchers
-    SET secret_attempts = CASE WHEN secret_attempt_window < now() - interval '15 minutes' THEN 1 ELSE secret_attempts + 1 END,
-        secret_attempt_window = CASE WHEN secret_attempt_window < now() - interval '15 minutes' THEN now() ELSE secret_attempt_window END
-    WHERE voucher_id = ${voucher.voucher_id} RETURNING secret_attempts`
-  if (!attempts.length || Number(attempts[0].secret_attempts) > 8) {
-    throw new Error('Too many secret-word attempts; try again in 15 minutes')
-  }
-  const pepper = createHmac('sha256', masterKey()).update('solgift:secret-word-pepper:v1').digest()
-  if (!await verifySecretWord(body.secretWord, voucher.secret_word_salt, voucher.secret_word_hash, pepper)) {
-    throw new Error('Secret word is incorrect')
-  }
+  await verifyVoucherSecretPhrase(voucher, body.secretWord)
   if (voucher.onchain) {
     const gift = decodeGiftAccount(await solana().getAccountInfo(new PublicKey(voucher.escrow_address), 'confirmed'))
     if (gift.status !== 'active' || gift.expiresAt <= Math.floor(Date.now() / 1000)) throw new Error('Voucher is no longer claimable')

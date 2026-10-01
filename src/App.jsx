@@ -19,7 +19,11 @@ async function voucherApi(path, body) {
     body: body ? JSON.stringify(body) : undefined,
   })
   const result = await response.json().catch(() => ({}))
-  if (!response.ok || result.status === 'error') throw new Error(result.message || result.error || `Ошибка сервиса (${response.status})`)
+  if (!response.ok || result.status === 'error') {
+    const error = new Error(result.message || result.error || `Ошибка сервиса (${response.status})`)
+    error.status = response.status
+    throw error
+  }
   return result
 }
 
@@ -453,10 +457,66 @@ function CreatePage({ voucher, setVoucher, onGenerated, onToast }) {
   const [isApiLoading, setIsApiLoading] = useState(false)
   const [secretWord, setSecretWord] = useState('')
   const [secretWordConfirm, setSecretWordConfirm] = useState('')
+  const [pendingRegistration, setPendingRegistration] = useState(() => {
+    try {
+      const stored = JSON.parse(sessionStorage.getItem('solgift:pending-registration:v1') || 'null')
+      if (!stored?.request?.voucherId || !stored?.request?.txHash || !stored?.voucher) return null
+      const template = templates.find((item) => item.id === stored.voucher.template?.id) || templates[0]
+      return { ...stored, voucher: { ...initialVoucher, ...stored.voucher, template }, secretWord: '' }
+    } catch { return null }
+  })
+
+  useEffect(() => {
+    try {
+      if (!pendingRegistration) sessionStorage.removeItem('solgift:pending-registration:v1')
+      else {
+        const { secretWord: _secretWord, ...safePending } = pendingRegistration
+        sessionStorage.setItem('solgift:pending-registration:v1', JSON.stringify(safePending))
+      }
+    } catch { /* Session storage may be unavailable; in-memory recovery still works. */ }
+  }, [pendingRegistration])
   const { connection } = useConnection()
   const { publicKey, sendTransaction } = useWallet()
 
   function update(key, value) { setVoucher((current) => ({ ...current, [key]: value })) }
+
+  async function registerConfirmedVoucher(pending) {
+    let createdVoucher
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        createdVoucher = await voucherApi('/api/escrow/create', { ...pending.request, secretWord: pending.secretWord })
+        break
+      } catch (error) {
+        const retryable = !error.status || error.status === 429 || error.status >= 500
+        if (!retryable || attempt === 2) throw error
+        await new Promise((resolve) => setTimeout(resolve, 800 * (2 ** attempt)))
+      }
+    }
+    const voucherId = createdVoucher?.voucherId || pending.request.voucherId
+    if (!voucherId) throw new Error('API не вернул ID ваучера')
+    const link = new URL(window.location.href)
+    link.search = ''
+    link.searchParams.set('id', voucherId)
+    const next = { ...pending.voucher, link: link.toString(), voucherId, signature: pending.request.txHash, status: 'active' }
+    setVoucher(next)
+    setPendingRegistration(null)
+    onGenerated(next, pending.secretWord)
+    onToast({ type: 'success', message: 'Ваучер создан' })
+  }
+
+  async function retryRegistration() {
+    if (!pendingRegistration || isApiLoading) return
+    if ([...secretWord.trim()].length < 12) {
+      onToast({ type: 'error', message: 'Введи исходную секретную фразу, чтобы безопасно восстановить регистрацию' })
+      return
+    }
+    setIsApiLoading(true)
+    try {
+      await registerConfirmedVoucher({ ...pendingRegistration, secretWord })
+    } catch (error) {
+      onToast({ type: 'error', message: `Платёж уже подтверждён. Регистрация пока не прошла: ${error.message}. Не отправляй платёж повторно. Подпись: ${pendingRegistration.request.txHash}` })
+    } finally { setIsApiLoading(false) }
+  }
 
   function generate() {
     if (isApiLoading) return
@@ -514,25 +574,20 @@ function CreatePage({ voucher, setVoucher, onGenerated, onToast }) {
       onToast({ type: 'sent', message: 'Транзакция отправлена' })
       await confirmSubmittedTransaction(connection, { signature, blockhash, lastValidBlockHeight })
       onToast({ type: 'sent', message: 'Загрузка... Регистрируем ваучер' })
-      let createdVoucher
-      try {
-        createdVoucher = await voucherApi('/api/escrow/create', {
-          senderAddress: publicKey.toBase58(), amount: Number(voucher.amount),
-          currency: voucher.currency, templateId: voucher.template.id,
-          message: voucher.message, txHash: signature,
-        })
-      } catch {
-        throw new Error(`Перевод подтверждён, но API не зарегистрировал ваучер. Сохрани подпись: ${signature}`)
+      const pending = {
+        request: {
+          voucherId: preparation.voucherId, senderAddress: publicKey.toBase58(), amount: Number(voucher.amount),
+          currency: voucher.currency, templateId: voucher.template.id, message: voucher.message, txHash: signature,
+        },
+        voucher: { ...voucher }, secretWord,
       }
-      const voucherId = createdVoucher.voucherId || preparation.voucherId
-      if (!voucherId) throw new Error(`Подарок создан on-chain, но API не вернул ID. Подпись: ${signature}`)
-      const link = new URL(window.location.href)
-      link.search = ''
-      link.searchParams.set('id', voucherId)
-      const next = { ...voucher, link: link.toString(), voucherId, signature, status: 'active' }
-      setVoucher(next)
-      onGenerated(next, secretWord)
-      onToast({ type: 'success', message: 'Ваучер создан' })
+      setPendingRegistration(pending)
+      try {
+        await registerConfirmedVoucher(pending)
+      } catch (error) {
+        console.error('Confirmed voucher registration failed', error)
+        throw new Error(`Перевод уже подтверждён, но регистрация ваучера не завершилась: ${error.message}. Не отправляй платёж повторно; ниже доступен повтор регистрации. Подпись: ${signature}`)
+      }
     } catch (error) {
       console.error('Voucher funding failed', error)
       const rejected = /reject|declin|cancel/i.test(`${error?.name} ${error?.message}`)
@@ -613,6 +668,10 @@ function CreatePage({ voucher, setVoucher, onGenerated, onToast }) {
               {isApiLoading ? <><span className="spinner" /> Создаём открытку...</> : <>Сгенерировать ссылку <ArrowRight size={16} className="button-arrow" /></>}
             </Button>
           </div>
+          {pendingRegistration && <div className="registration-recovery" role="status">
+            <p>Платёж подтверждён, но сервис не завершил регистрацию. Не отправляй деньги повторно. Введи ту же секретную фразу, что задавал при оплате, и повтори регистрацию.</p>
+            <button type="button" onClick={retryRegistration} disabled={isApiLoading || [...secretWord.trim()].length < 12}>{isApiLoading ? 'Повторяем регистрацию…' : 'Повторить регистрацию подарка'}</button>
+          </div>}
         </section>
 
         <aside className="preview-column">
