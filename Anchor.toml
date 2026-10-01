@@ -2,6 +2,10 @@
 seeds = false
 skip-lint = false
 
+[toolchain]
+anchor_version = "1.1.2"
+solana_version = "3.1.10"
+
 [programs.localnet]
 solgift_escrow = "A5cFtpUVnBncPqaBpUjHUtb9brk3qoPZSUjRdD3DTht2"
 
@@ -9,5 +13,5 @@ solgift_escrow = "A5cFtpUVnBncPqaBpUjHUtb9brk3qoPZSUjRdD3DTht2"
 solgift_escrow = "A5cFtpUVnBncPqaBpUjHUtb9brk3qoPZSUjRdD3DTht2"
 
 [provider]
-cluster = "Localnet"
+cluster = "Devnet"
 wallet = "~/.config/solana/id.json"
