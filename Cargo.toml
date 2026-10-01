@@ -1,0 +1,3 @@
+[workspace]
+members = ["programs/solgift_escrow"]
+resolver = "2"

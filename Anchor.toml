@@ -1,0 +1,13 @@
+[features]
+seeds = false
+skip-lint = false
+
+[programs.localnet]
+solgift_escrow = "Fg6PaFpoGXkYsidMpWxTWqkZB7FEfcYkgMQHGXRt4E4"
+
+[programs.devnet]
+solgift_escrow = "Fg6PaFpoGXkYsidMpWxTWqkZB7FEfcYkgMQHGXRt4E4"
+
+[provider]
+cluster = "Localnet"
+wallet = "~/.config/solana/id.json"

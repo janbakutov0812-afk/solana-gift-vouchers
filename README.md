@@ -43,6 +43,8 @@ Recipient ── opens link ──▶ Frontend ── reads voucher ──▶ Es
 
 The frontend does not store the escrow private key. See [BACKEND_API.md](./BACKEND_API.md) for API behavior and security requirements.
 
+An initial on-chain Anchor escrow is being developed in [`programs/solgift_escrow`](./programs/solgift_escrow/README.md). The current website still calls the Vercel escrow API; it does not yet use this program. The on-chain implementation is a dev-stage prototype and must not receive valuable funds before dedicated tests, a devnet acceptance flow, a verified build, frontend integration, and independent review.
+
 ## Tech stack
 
 | Layer | Technologies |
