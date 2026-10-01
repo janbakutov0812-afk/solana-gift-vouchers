@@ -110,4 +110,6 @@ Set these server-only Vercel variables before using the API:
 
 Never prefix these secrets with `VITE_`. The public frontend API base defaults to the current site origin, so Vercel serves `/api/escrow/*` on the same HTTPS domain. The fee payer needs devnet SOL before claim transactions can succeed. The local `backend/server.js` remains a devnet-only file-backed development server and must not be used as the Vercel runtime.
 
+`GET /api/escrow/health` returns the fee payer's public address, configured network, and current SOL balance. It never returns the fee payer secret key.
+
 Keep `ESCROW_MASTER_KEY` stable and backed up: it encrypts escrow signers and derives the secret-word pepper. Existing vouchers created before secret-word protection have no verifier and are rejected by the updated claim route; resolve/recreate any such devnet vouchers before rollout.

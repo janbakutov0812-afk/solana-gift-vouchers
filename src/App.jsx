@@ -313,6 +313,15 @@ function CreatePage({ voucher, setVoucher, onGenerated, onToast }) {
       const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed')
       transaction.feePayer = publicKey
       transaction.recentBlockhash = blockhash
+      const simulation = await connection.simulateTransaction(transaction, {
+        commitment: 'confirmed',
+        sigVerify: false,
+      })
+      if (simulation.value.err) {
+        console.error('Voucher funding simulation failed', simulation.value.err, simulation.value.logs)
+        const details = simulation.value.logs?.slice(-3).join(' ')
+        throw new Error(`Предварительная проверка транзакции не прошла; средства не отправлялись.${details ? ` ${details}` : ''}`)
+      }
       signature = await sendTransaction(transaction, connection, { preflightCommitment: 'confirmed' })
       onToast({ type: 'sent', message: 'Транзакция отправлена' })
       const confirmation = await connection.confirmTransaction({ signature, blockhash, lastValidBlockHeight }, 'confirmed')

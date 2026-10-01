@@ -424,7 +424,10 @@ export default async function handler(request, response) {
       await ensureSchema()
       const feePayer = feePayerKeypair()
       const feePayerBalanceLamports = await solana().getBalance(feePayer.publicKey, 'confirmed')
-      return send(response, 200, { status: 'ok', network, feePayerConfigured: true, feePayerBalanceLamports }, routeOrigin)
+      return send(response, 200, {
+        status: 'ok', network, feePayerConfigured: true,
+        feePayerAddress: feePayer.publicKey.toBase58(), feePayerBalanceLamports,
+      }, routeOrigin)
     }
     if (request.method === 'POST' && action === 'prepare') return send(response, 200, await prepare(request.body || {}), routeOrigin)
     if (request.method === 'POST' && action === 'create') return send(response, 200, await create(request.body || {}), routeOrigin)
