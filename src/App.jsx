@@ -2,16 +2,14 @@ import { useEffect, useMemo, useState } from 'react'
 import { AnimatePresence, motion, useMotionValue, useSpring, useTransform } from 'framer-motion'
 import { useConnection, useWallet } from '@solana/wallet-adapter-react'
 import { useWalletModal } from '@solana/wallet-adapter-react-ui'
-import { getAssociatedTokenAddress, createAssociatedTokenAccountIdempotentInstruction, createTransferInstruction } from '@solana/spl-token'
-import { LAMPORTS_PER_SOL, PublicKey, SystemProgram, Transaction } from '@solana/web3.js'
+import { LAMPORTS_PER_SOL, Transaction } from '@solana/web3.js'
+import { claimGiftInstruction, createGiftInstruction, decodeBase64Url } from './solgift-program.js'
 import {
   ArrowDown, ArrowRight, ArrowUpRight, Check, ChevronDown, Copy, Gift,
   LockKeyhole, Menu, ShieldCheck, Sparkles, Wallet, X, Zap,
 } from 'lucide-react'
 
 const VOUCHER_API = import.meta.env.VITE_VOUCHER_API_URL || (import.meta.env.PROD ? window.location.origin : '')
-const USDC_DEVNET_MINT = new PublicKey('4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU')
-const USDC_MAINNET_MINT = new PublicKey('EPjFWdd5AufqSSqeM2q2xzybapC8G4wEGGkZwyTDt1v')
 
 async function voucherApi(path, body) {
   if (!VOUCHER_API) throw new Error('Сервис ваучеров не настроен. Попробуй позже.')
@@ -276,6 +274,10 @@ function CreatePage({ voucher, setVoucher, onGenerated, onToast }) {
       onToast({ type: 'error', message: 'Эскроу API не настроен — перевод не отправлялся' })
       return
     }
+    if ((import.meta.env.VITE_SOLANA_NETWORK || 'devnet') !== 'devnet') {
+      onToast({ type: 'error', message: 'Контракт подарков сейчас работает только в Devnet' })
+      return
+    }
     if ([...secretWord.trim()].length < 12 || secretWord !== secretWordConfirm) {
       onToast({ type: 'error', message: secretWord !== secretWordConfirm ? 'Секретные фразы не совпадают' : 'Задай секретную фразу длиной не менее 12 символов' })
       return
@@ -287,29 +289,20 @@ function CreatePage({ voucher, setVoucher, onGenerated, onToast }) {
       const preparation = await voucherApi('/api/escrow/prepare', {
         senderAddress: publicKey.toBase58(), currency: voucher.currency,
         amount: Number(voucher.amount), templateId: voucher.template.id, message: voucher.message,
-        secretWord,
+        secretWord, onchain: true,
       })
-      if (!preparation.escrowAddress) {
-        throw new Error('API не вернул адрес escrow; средства не отправлены')
+      if (!preparation.escrowAddress || !preparation.giftHash || !preparation.voucherId) {
+        throw new Error('API не подготовил on-chain подарок; средства не отправлены')
       }
-      const escrow = new PublicKey(preparation.escrowAddress)
       const transaction = new Transaction()
-      const network = import.meta.env.VITE_SOLANA_NETWORK || 'devnet'
-      if (voucher.currency === 'SOL') {
-        const lamports = Math.round(Number(voucher.amount) * LAMPORTS_PER_SOL)
-        if (!Number.isSafeInteger(lamports) || lamports <= 0) throw new Error('Укажи корректную сумму SOL')
-        transaction.add(SystemProgram.transfer({ fromPubkey: publicKey, toPubkey: escrow, lamports }))
-      } else {
-        const mint = network === 'mainnet-beta' ? USDC_MAINNET_MINT : USDC_DEVNET_MINT
-        const sourceAta = await getAssociatedTokenAddress(mint, publicKey)
-        const escrowAta = await getAssociatedTokenAddress(mint, escrow)
-        const sourceExists = await connection.getAccountInfo(sourceAta, 'confirmed')
-        if (!sourceExists) transaction.add(createAssociatedTokenAccountIdempotentInstruction(publicKey, sourceAta, publicKey, mint))
-        transaction.add(createAssociatedTokenAccountIdempotentInstruction(publicKey, escrowAta, escrow, mint))
-        const amount = Math.round(Number(voucher.amount) * 1_000_000)
-        if (!Number.isSafeInteger(amount) || amount <= 0) throw new Error('Укажи корректную сумму USDC')
-        transaction.add(createTransferInstruction(sourceAta, escrowAta, publicKey, amount))
-      }
+      const decimals = voucher.currency === 'SOL' ? 9 : 6
+      const amount = BigInt(Math.round(Number(voucher.amount) * 10 ** decimals))
+      if (amount <= 0n) throw new Error('Укажи корректную сумму подарка')
+      transaction.add(await createGiftInstruction({
+        creator: publicKey, giftAddress: preparation.escrowAddress,
+        giftHash: decodeBase64Url(preparation.giftHash), currency: voucher.currency,
+        amount, expiresAt: preparation.expiresAt,
+      }))
       const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed')
       transaction.feePayer = publicKey
       transaction.recentBlockhash = blockhash
@@ -337,8 +330,8 @@ function CreatePage({ voucher, setVoucher, onGenerated, onToast }) {
       } catch {
         throw new Error(`Перевод подтверждён, но API не зарегистрировал ваучер. Сохрани подпись: ${signature}`)
       }
-      const voucherId = createdVoucher.voucherId
-      if (!voucherId) throw new Error(`Перевод подтверждён, но API не вернул voucherId. Сохрани подпись: ${signature}`)
+      const voucherId = createdVoucher.voucherId || preparation.voucherId
+      if (!voucherId) throw new Error(`Подарок создан on-chain, но API не вернул ID. Подпись: ${signature}`)
       const link = new URL(window.location.href)
       link.search = ''
       link.searchParams.set('id', voucherId)
@@ -468,7 +461,9 @@ function ClaimPage({ voucher, onToast, isVoucherLoading = false }) {
   const [secretWord, setSecretWord] = useState('')
   useEffect(() => { if (voucher.status === 'claimed') setClaimed(true) }, [voucher.status])
   const { connection } = useConnection()
-  const { publicKey } = useWallet()
+  const { publicKey, sendTransaction } = useWallet()
+  const isExpired = voucher.status === 'expired' || (voucher.expiresAt && Date.now() >= voucher.expiresAt * 1000)
+  const isUnavailable = claimed || voucher.status === 'claimed' || voucher.status === 'refunded' || isExpired
 
   function openGift() {
     if (!opened) setOpened(true)
@@ -487,19 +482,45 @@ function ClaimPage({ voucher, onToast, isVoucherLoading = false }) {
       onToast({ type: 'error', message: 'Введи секретную фразу, которую тебе передал отправитель' })
       return
     }
-    if (isApiLoading || claimed) return
+    if (isApiLoading || isUnavailable) return
     setIsApiLoading(true)
     try {
       onToast({ type: 'sent', message: 'Загрузка... Запрашиваем выплату' })
       const result = await voucherApi('/api/escrow/claim', {
         voucherId: voucher.voucherId, recipientAddress: publicKey.toBase58(), secretWord,
       })
-      const txHash = result.txHash || result.signature
-      if (!txHash) throw new Error('Эскроу API не вернул хэш транзакции выплаты')
-      onToast({ type: 'sent', message: 'Выплата отправлена, ожидаем подтверждение' })
-      const confirmation = result.blockhash && result.lastValidBlockHeight
-        ? await connection.confirmTransaction({ signature: txHash, blockhash: result.blockhash, lastValidBlockHeight: result.lastValidBlockHeight }, 'confirmed')
-        : await connection.confirmTransaction(txHash, 'confirmed')
+      let txHash
+      let confirmation
+      if (result.onchain) {
+        if (!voucher.onchain || !voucher.giftAddress || !voucher.giftHash || !voucher.senderAddress || !result.giftSecret) {
+          throw new Error('Не удалось проверить данные on-chain подарка')
+        }
+        const transaction = new Transaction()
+        transaction.add(await claimGiftInstruction({
+          creator: voucher.senderAddress, giftAddress: voucher.giftAddress,
+          giftHash: decodeBase64Url(voucher.giftHash), giftSecret: decodeBase64Url(result.giftSecret),
+          currency: voucher.currency, recipient: publicKey,
+        }))
+        const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed')
+        transaction.feePayer = publicKey
+        transaction.recentBlockhash = blockhash
+        const simulation = await connection.simulateTransaction(transaction, { commitment: 'confirmed', sigVerify: false })
+        if (simulation.value.err) {
+          const details = simulation.value.logs?.slice(-3).join(' ')
+          throw new Error(`Предварительная проверка получения не прошла.${details ? ` ${details}` : ''}`)
+        }
+        onToast({ type: 'sent', message: 'Подтверди получение подарка в кошельке' })
+        txHash = await sendTransaction(transaction, connection, { preflightCommitment: 'confirmed' })
+        onToast({ type: 'sent', message: 'Транзакция отправлена, ожидаем подтверждение' })
+        confirmation = await connection.confirmTransaction({ signature: txHash, blockhash, lastValidBlockHeight }, 'confirmed')
+      } else {
+        txHash = result.txHash || result.signature
+        if (!txHash) throw new Error('Эскроу API не вернул хэш транзакции выплаты')
+        onToast({ type: 'sent', message: 'Выплата отправлена, ожидаем подтверждение' })
+        confirmation = result.blockhash && result.lastValidBlockHeight
+          ? await connection.confirmTransaction({ signature: txHash, blockhash: result.blockhash, lastValidBlockHeight: result.lastValidBlockHeight }, 'confirmed')
+          : await connection.confirmTransaction(txHash, 'confirmed')
+      }
       if (confirmation.value.err) throw new Error('Ошибка сети при подтверждении выплаты')
       setClaimed(true)
       onToast({ type: 'success', message: 'Успешно выплачено' })
@@ -509,7 +530,7 @@ function ClaimPage({ voucher, onToast, isVoucherLoading = false }) {
       const message = /secret word is incorrect/i.test(error?.message || '') ? 'Секретная фраза неверна'
         : /too many secret-word attempts/i.test(error?.message || '') ? 'Слишком много попыток. Попробуй через 15 минут'
           : /predates secret-word/i.test(error?.message || '') ? 'Этот ваучер создан до защиты фразой; попроси отправителя создать новый'
-            : `Ошибка API: ${error?.message || 'Сервис недоступен'}`
+            : `Ошибка получения: ${error?.message || 'Сервис недоступен'}`
       onToast({ type: 'error', message: rejected ? 'Транзакция отклонена пользователем' : message })
     } finally { setIsApiLoading(false) }
   }
@@ -541,11 +562,11 @@ function ClaimPage({ voucher, onToast, isVoucherLoading = false }) {
             <h1>{voucher.template.title}</h1>
             <p className="revealed-message">“{voucher.message || 'Небольшой сюрприз специально для тебя ✨'}”</p>
             <div className="revealed-from"><span className="from-avatar">✳</span><span>С теплом, <strong>твой друг</strong></span><span className="from-dot">·</span><span className="onchain-label"><SolMark small /> on-chain</span></div>
-            {!claimed && voucher.status !== 'claimed' && <div className="claim-secret-field"><label className="input-label" htmlFor="claim-secret-word">Секретная фраза</label><div className="amount-input-wrap secret-word-input-wrap"><input id="claim-secret-word" type="password" autoComplete="off" maxLength={256} value={secretWord} onChange={(event) => setSecretWord(event.target.value)} placeholder="Введи фразу от отправителя" /></div></div>}
-            <Button onClick={claimGift} className={`claim-button ${claimed ? 'claim-button-done' : ''}`} disabled={isVoucherLoading || isApiLoading || claimed || voucher.status === 'claimed' || [...secretWord.trim()].length < 12}>
-              {claimed || voucher.status === 'claimed' ? <><Check size={17} /> Успешно выплачено</> : isVoucherLoading || isApiLoading ? <><span className="spinner" /> Отправляем…</> : <>Забрать на кошелёк <ArrowRight className="button-arrow" size={17} /></>}
+            {!isUnavailable && <div className="claim-secret-field"><label className="input-label" htmlFor="claim-secret-word">Секретная фраза</label><div className="amount-input-wrap secret-word-input-wrap"><input id="claim-secret-word" type="password" autoComplete="off" maxLength={256} value={secretWord} onChange={(event) => setSecretWord(event.target.value)} placeholder="Введи фразу от отправителя" /></div></div>}
+            <Button onClick={claimGift} className={`claim-button ${claimed || voucher.status === 'claimed' ? 'claim-button-done' : ''}`} disabled={isVoucherLoading || isApiLoading || isUnavailable || [...secretWord.trim()].length < 12}>
+              {claimed || voucher.status === 'claimed' ? <><Check size={17} /> Подарок получен</> : isExpired || voucher.status === 'refunded' ? <>Срок получения истёк</> : isApiLoading ? <><span className="spinner" /> Отправляем…</> : <>Забрать на кошелёк <ArrowRight className="button-arrow" size={17} /></>}
             </Button>
-            <span className="claim-footnote"><LockKeyhole size={12} /> {publicKey ? 'Выплата эскроу-сервисом после подтверждения' : 'Сначала подключи кошелёк получателя'}</span>
+            <span className="claim-footnote"><LockKeyhole size={12} /> {publicKey ? 'Перевод из смарт-контракта после подписи' : 'Сначала подключи кошелёк получателя'}</span>
           </motion.div>
         )}
       </section>
@@ -653,7 +674,7 @@ function App() {
         const data = result.voucher || result
         const templateId = data.templateId || data.template
         const template = templates.find((item) => item.id === templateId) || templates[0]
-        const status = data.status === 'claimed' ? 'claimed' : 'active'
+        const status = ['claimed', 'refunded', 'expired'].includes(data.status) ? data.status : 'active'
         if (active) {
           setVoucher((current) => ({ ...current, ...data, template, voucherId: initialVoucherId, status }))
           setToast(null)

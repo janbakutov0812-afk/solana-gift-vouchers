@@ -1,6 +1,6 @@
 import { createServer } from 'node:http'
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
-import { createCipheriv, createDecipheriv, createHmac, randomBytes } from 'node:crypto'
+import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes } from 'node:crypto'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import bs58 from 'bs58'
@@ -12,6 +12,7 @@ import {
   createTransferCheckedInstruction, getAssociatedTokenAddress,
 } from '@solana/spl-token'
 import { createSecretWordVerifier, verifySecretWord } from '../lib/secret-word.js'
+import { CREATE_SOL_DISCRIMINATOR, CREATE_USDC_DISCRIMINATOR, decodeGiftAccount, giftAddress, SOLGIFT_PROGRAM_ID } from '../lib/onchain-gift.js'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const databasePath = process.env.ESCROW_DB_PATH || path.join(here, 'data', 'vouchers.json')
@@ -110,21 +111,55 @@ async function prepare(body) {
   const now = Date.now()
   database.vouchers = database.vouchers.filter((voucher) => voucher.status !== 'prepared'
     || now - Date.parse(voucher.createdAt) < 2 * 60 * 60 * 1000)
-  const escrow = Keypair.generate()
+  const onchain = body.onchain === true
+  const escrowSecret = onchain ? randomBytes(32) : Buffer.from(Keypair.generate().secretKey)
+  const giftHash = onchain ? createHash('sha256').update(escrowSecret).digest() : null
+  const escrowAddress = onchain
+    ? giftAddress(sender, giftHash).toBase58()
+    : Keypair.fromSecretKey(escrowSecret).publicKey.toBase58()
   const voucherId = `escrow_${randomBytes(18).toString('base64url')}`
   database.vouchers.push({
     voucherId, senderAddress: sender.toBase58(), amount, currency: body.currency,
-    templateId: body.templateId, message: body.message, escrowAddress: escrow.publicKey.toBase58(),
-    escrowSecret: encryptSecret(Buffer.from(escrow.secretKey)), status: 'prepared',
+    templateId: body.templateId, message: body.message, escrowAddress,
+    escrowSecret: encryptSecret(escrowSecret), status: 'prepared', onchain,
+    giftHash: giftHash?.toString('base64url'),
     secretWordSalt: secretWord.salt, secretWordHash: secretWord.verifier,
     secretWordAttempts: 0, secretWordAttemptWindow: Date.now(),
     createdAt: new Date().toISOString(),
   })
   await persist()
-  return { escrowAddress: escrow.publicKey.toBase58() }
+  const expiresAt = Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60
+  return { escrowAddress, voucherId, giftHash: giftHash?.toString('base64url'), expiresAt, onchain }
+}
+
+async function verifyOnchainFunding(voucher, txHash) {
+  const tx = await connection.getParsedTransaction(txHash, { commitment: 'confirmed', maxSupportedTransactionVersion: 0 })
+  if (!tx || tx.meta?.err) throw new Error('Funding transaction is not confirmed successfully')
+  const giftHash = Buffer.from(voucher.giftHash, 'base64url')
+  const expectedGift = giftAddress(voucher.senderAddress, giftHash)
+  if (expectedGift.toBase58() !== voucher.escrowAddress) throw new Error('Gift PDA does not match the prepared gift')
+  const signer = tx.transaction.message.accountKeys.some((key) => key.pubkey.toBase58() === voucher.senderAddress && key.signer)
+  if (!signer) throw new Error('Transaction was not signed by senderAddress')
+  const expectedDiscriminator = voucher.currency === 'SOL' ? CREATE_SOL_DISCRIMINATOR : CREATE_USDC_DISCRIMINATOR
+  const expectedAmount = amountUnits(voucher.amount, voucher.currency)
+  const instruction = tx.transaction.message.instructions.find((item) => item.programId?.equals(SOLGIFT_PROGRAM_ID)
+    && item.accounts?.some((account) => account.equals(expectedGift)))
+  if (!instruction) throw new Error('Transaction does not contain the Solgift program instruction')
+  const data = bs58.decode(instruction.data)
+  if (!data.subarray(0, 8).equals(expectedDiscriminator)
+      || !data.subarray(8, 40).equals(giftHash)
+      || data.readBigUInt64LE(40) !== expectedAmount) {
+    throw new Error('Solgift instruction does not match the prepared gift')
+  }
+  const gift = decodeGiftAccount(await connection.getAccountInfo(expectedGift, 'confirmed'))
+  if (!gift.giftHash.equals(giftHash) || gift.creator.toBase58() !== voucher.senderAddress
+      || gift.asset !== voucher.currency || gift.amount !== expectedAmount || gift.status !== 'active') {
+    throw new Error('On-chain gift account does not match the prepared voucher')
+  }
 }
 
 async function verifyFunding(voucher, txHash, body) {
+  if (voucher.onchain) return verifyOnchainFunding(voucher, txHash)
   const tx = await connection.getParsedTransaction(txHash, { commitment: 'confirmed', maxSupportedTransactionVersion: 0 })
   if (!tx || tx.meta?.err) throw new Error('Funding transaction is not confirmed successfully')
   const sender = voucher.senderAddress
@@ -189,10 +224,19 @@ async function create(body) {
 async function details(id) {
   const voucher = findVoucher(id)
   if (!voucher || !['active', 'claiming', 'claimed'].includes(voucher.status)) throw new Error('Voucher not found')
+  let status = voucher.status === 'claimed' ? 'claimed' : 'active'
+  let giftInfo
+  if (voucher.onchain) {
+    giftInfo = decodeGiftAccount(await connection.getAccountInfo(new PublicKey(voucher.escrowAddress), 'confirmed'))
+    status = giftInfo.status === 'active' && giftInfo.expiresAt <= Math.floor(Date.now() / 1000) ? 'expired' : giftInfo.status
+  }
   return {
     voucherId: voucher.voucherId, amount: voucher.amount, currency: voucher.currency,
-    templateId: voucher.templateId, message: voucher.message,
-    status: voucher.status === 'claimed' ? 'claimed' : 'active',
+    templateId: voucher.templateId, message: voucher.message, senderAddress: voucher.senderAddress,
+    giftAddress: voucher.onchain ? voucher.escrowAddress : undefined,
+    giftHash: voucher.onchain ? voucher.giftHash : undefined,
+    expiresAt: giftInfo?.expiresAt,
+    onchain: Boolean(voucher.onchain), status,
   }
 }
 
@@ -273,6 +317,11 @@ async function claim(body) {
   const pepper = createHmac('sha256', encryptionKey).update('solgift:secret-word-pepper:v1').digest()
   if (!await verifySecretWord(body.secretWord, voucher.secretWordSalt, voucher.secretWordHash, pepper)) {
     throw new Error('Secret word is incorrect')
+  }
+  if (voucher.onchain) {
+    const gift = decodeGiftAccount(await connection.getAccountInfo(new PublicKey(voucher.escrowAddress), 'confirmed'))
+    if (gift.status !== 'active' || gift.expiresAt <= Math.floor(Date.now() / 1000)) throw new Error('Voucher is no longer claimable')
+    return { onchain: true, giftSecret: decryptSecret(voucher.escrowSecret).toString('base64url') }
   }
   const recipient = address(body.recipientAddress, 'recipient').toBase58()
   if (activeClaims.has(voucher.voucherId)) throw new Error('Voucher claim is already in progress')

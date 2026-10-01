@@ -1,6 +1,6 @@
 import { neon } from '@neondatabase/serverless'
 import bs58 from 'bs58'
-import { createCipheriv, createDecipheriv, createHmac, randomBytes } from 'node:crypto'
+import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes } from 'node:crypto'
 import {
   Connection, Keypair, PublicKey, SystemProgram, Transaction,
 } from '@solana/web3.js'
@@ -9,6 +9,7 @@ import {
   createTransferCheckedInstruction, getAssociatedTokenAddress,
 } from '@solana/spl-token'
 import { createSecretWordVerifier, verifySecretWord } from '../../lib/secret-word.js'
+import { CREATE_SOL_DISCRIMINATOR, CREATE_USDC_DISCRIMINATOR, decodeGiftAccount, giftAddress, SOLGIFT_PROGRAM_ID } from '../../lib/onchain-gift.js'
 
 const templates = new Set(['birthday', 'coffee', 'thanks', 'study'])
 const network = process.env.ESCROW_NETWORK || 'devnet'
@@ -49,6 +50,8 @@ async function ensureSchema() {
       secret_word_hash text,
       secret_attempts integer NOT NULL DEFAULT 0,
       secret_attempt_window timestamptz NOT NULL DEFAULT now(),
+      onchain boolean NOT NULL DEFAULT false,
+      gift_hash text,
       claim_tx_hash text,
       claim_raw_transaction text,
       claim_blockhash text,
@@ -61,6 +64,8 @@ async function ensureSchema() {
     await sql()`ALTER TABLE escrow_vouchers ADD COLUMN IF NOT EXISTS secret_word_hash text`
     await sql()`ALTER TABLE escrow_vouchers ADD COLUMN IF NOT EXISTS secret_attempts integer NOT NULL DEFAULT 0`
     await sql()`ALTER TABLE escrow_vouchers ADD COLUMN IF NOT EXISTS secret_attempt_window timestamptz NOT NULL DEFAULT now()`
+    await sql()`ALTER TABLE escrow_vouchers ADD COLUMN IF NOT EXISTS onchain boolean NOT NULL DEFAULT false`
+    await sql()`ALTER TABLE escrow_vouchers ADD COLUMN IF NOT EXISTS gift_hash text`
   })().catch((error) => { schemaReady = undefined; throw error })
   return schemaReady
 }
@@ -145,19 +150,52 @@ async function prepare(body) {
   await ensureSchema()
   const voucher = validateVoucher(body)
   const secretWord = await createSecretWordVerifier(body.secretWord, createHmac('sha256', masterKey()).update('solgift:secret-word-pepper:v1').digest())
-  const escrow = Keypair.generate()
+  const onchain = body.onchain === true
+  const escrowSecret = onchain ? randomBytes(32) : Buffer.from(Keypair.generate().secretKey)
+  const giftHash = onchain ? createHash('sha256').update(escrowSecret).digest() : null
+  const escrowAddress = onchain
+    ? giftAddress(voucher.senderAddress, giftHash).toBase58()
+    : Keypair.fromSecretKey(escrowSecret).publicKey.toBase58()
   const voucherId = `escrow_${randomBytes(18).toString('base64url')}`
   await sql()`DELETE FROM escrow_vouchers WHERE status = 'prepared' AND created_at < now() - interval '2 hours'`
   await sql()`INSERT INTO escrow_vouchers
     (voucher_id, sender_address, amount, currency, template_id, message, escrow_address, escrow_secret,
-      secret_word_salt, secret_word_hash, status)
+      secret_word_salt, secret_word_hash, status, onchain, gift_hash)
     VALUES (${voucherId}, ${voucher.senderAddress}, ${voucher.amount}, ${voucher.currency}, ${voucher.templateId},
-      ${voucher.message}, ${escrow.publicKey.toBase58()}, ${encryptSecret(Buffer.from(escrow.secretKey))},
-      ${secretWord.salt}, ${secretWord.verifier}, 'prepared')`
-  return { escrowAddress: escrow.publicKey.toBase58() }
+      ${voucher.message}, ${escrowAddress}, ${encryptSecret(escrowSecret)},
+      ${secretWord.salt}, ${secretWord.verifier}, 'prepared', ${onchain}, ${giftHash ? giftHash.toString('base64url') : null})`
+  const expiresAt = Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60
+  return { escrowAddress, voucherId, giftHash: giftHash?.toString('base64url'), expiresAt, onchain }
+}
+
+async function verifyOnchainFunding(voucher, txHash) {
+  const tx = await solana().getParsedTransaction(txHash, { commitment: 'confirmed', maxSupportedTransactionVersion: 0 })
+  if (!tx || tx.meta?.err) throw new Error('Funding transaction is not confirmed successfully')
+  const giftHash = Buffer.from(voucher.gift_hash, 'base64url')
+  const expectedGift = giftAddress(voucher.sender_address, giftHash).toBase58()
+  if (expectedGift !== voucher.escrow_address) throw new Error('Gift PDA does not match the prepared gift')
+  const signer = tx.transaction.message.accountKeys.some((key) => key.pubkey.toBase58() === voucher.sender_address && key.signer)
+  if (!signer) throw new Error('Transaction was not signed by senderAddress')
+  const expectedDiscriminator = voucher.currency === 'SOL' ? CREATE_SOL_DISCRIMINATOR : CREATE_USDC_DISCRIMINATOR
+  const expectedAmount = amountUnits(voucher.amount, voucher.currency)
+  const instruction = tx.transaction.message.instructions.find((item) => item.programId?.equals(SOLGIFT_PROGRAM_ID)
+    && item.accounts?.some((account) => account.equals(new PublicKey(expectedGift))))
+  if (!instruction) throw new Error('Transaction does not contain the Solgift program instruction')
+  const data = bs58.decode(instruction.data)
+  if (!data.subarray(0, 8).equals(expectedDiscriminator)
+      || !data.subarray(8, 40).equals(giftHash)
+      || data.readBigUInt64LE(40) !== expectedAmount) {
+    throw new Error('Solgift instruction does not match the prepared gift')
+  }
+  const gift = decodeGiftAccount(await solana().getAccountInfo(new PublicKey(expectedGift), 'confirmed'))
+  if (!gift.giftHash.equals(giftHash) || gift.creator.toBase58() !== voucher.sender_address
+      || gift.asset !== voucher.currency || gift.amount !== expectedAmount || gift.status !== 'active') {
+    throw new Error('On-chain gift account does not match the prepared voucher')
+  }
 }
 
 async function verifyFunding(voucher, txHash) {
+  if (voucher.onchain) return verifyOnchainFunding(voucher, txHash)
   const tx = await solana().getParsedTransaction(txHash, { commitment: 'confirmed', maxSupportedTransactionVersion: 0 })
   if (!tx || tx.meta?.err) throw new Error('Funding transaction is not confirmed successfully')
   const sender = voucher.sender_address
@@ -199,7 +237,7 @@ async function create(body) {
   const duplicate = await sql()`SELECT voucher_id FROM escrow_vouchers WHERE tx_hash = ${body.txHash} LIMIT 1`
   if (duplicate.length) return { status: 'success', voucherId: duplicate[0].voucher_id }
   const fields = validateVoucher(body)
-  const candidates = await sql()`SELECT voucher_id, sender_address, amount, currency, template_id, message, escrow_address
+  const candidates = await sql()`SELECT voucher_id, sender_address, amount, currency, template_id, message, escrow_address, onchain, gift_hash
     FROM escrow_vouchers WHERE status = 'prepared' AND sender_address = ${fields.senderAddress}
       AND currency = ${fields.currency} AND template_id = ${fields.templateId}
       AND amount = ${fields.amount} AND message = ${fields.message}
@@ -220,14 +258,23 @@ async function create(body) {
 
 async function details(id) {
   await ensureSchema()
-  const rows = await sql()`SELECT voucher_id, amount, currency, template_id, message, status
+  const rows = await sql()`SELECT voucher_id, sender_address, amount, currency, template_id, message, status, onchain, gift_hash, escrow_address
     FROM escrow_vouchers WHERE voucher_id = ${id} AND status IN ('active', 'claim_preparing', 'claiming', 'claimed') LIMIT 1`
   if (!rows.length) throw new Error('Voucher not found')
   const voucher = rows[0]
+  let status = voucher.status === 'claimed' ? 'claimed' : 'active'
+  let giftInfo
+  if (voucher.onchain) {
+    giftInfo = decodeGiftAccount(await solana().getAccountInfo(new PublicKey(voucher.escrow_address), 'confirmed'))
+    status = giftInfo.status === 'active' && giftInfo.expiresAt <= Math.floor(Date.now() / 1000) ? 'expired' : giftInfo.status
+  }
   return {
     voucherId: voucher.voucher_id, amount: Number(voucher.amount), currency: voucher.currency,
-    templateId: voucher.template_id, message: voucher.message,
-    status: voucher.status === 'claimed' ? 'claimed' : 'active',
+    templateId: voucher.template_id, message: voucher.message, senderAddress: voucher.sender_address,
+    giftAddress: voucher.onchain ? voucher.escrow_address : undefined,
+    giftHash: voucher.onchain ? voucher.gift_hash : undefined,
+    expiresAt: giftInfo?.expiresAt,
+    onchain: voucher.onchain, status,
   }
 }
 
@@ -365,6 +412,11 @@ async function claim(body) {
   if (!await verifySecretWord(body.secretWord, voucher.secret_word_salt, voucher.secret_word_hash, pepper)) {
     throw new Error('Secret word is incorrect')
   }
+  if (voucher.onchain) {
+    const gift = decodeGiftAccount(await solana().getAccountInfo(new PublicKey(voucher.escrow_address), 'confirmed'))
+    if (gift.status !== 'active' || gift.expiresAt <= Math.floor(Date.now() / 1000)) throw new Error('Voucher is no longer claimable')
+    return { onchain: true, giftSecret: decryptSecret(voucher.escrow_secret).toString('base64url') }
+  }
   if (voucher.status === 'claimed') {
     if (voucher.recipient_address !== recipient) throw new Error('Voucher has already been claimed')
     return { txHash: voucher.claim_tx_hash }
@@ -413,11 +465,18 @@ function send(response, status, payload, origin) {
   response.status(status).json(payload)
 }
 
+function isAllowedOrigin(request, origin) {
+  if (!origin || allowedOrigins.has(origin)) return true
+  const protocol = (request.headers['x-forwarded-proto'] || (request.socket?.encrypted ? 'https' : 'http')).split(',')[0].trim()
+  const host = request.headers['x-forwarded-host'] || request.headers.host
+  return Boolean(host && origin === `${protocol}://${host}`)
+}
+
 export default async function handler(request, response) {
   const origin = request.headers.origin
-  if (request.method === 'OPTIONS') return send(response, 204, {}, allowedOrigins.has(origin) ? origin : undefined)
-  if (origin && !allowedOrigins.has(origin)) return send(response, 403, { message: 'Origin is not allowed' })
-  const routeOrigin = origin && allowedOrigins.has(origin) ? origin : undefined
+  if (request.method === 'OPTIONS') return send(response, 204, {}, isAllowedOrigin(request, origin) ? origin : undefined)
+  if (!isAllowedOrigin(request, origin)) return send(response, 403, { message: 'Origin is not allowed' })
+  const routeOrigin = origin && isAllowedOrigin(request, origin) ? origin : undefined
   const action = request.query?.action
   try {
     if (request.method === 'GET' && action === 'health') {
