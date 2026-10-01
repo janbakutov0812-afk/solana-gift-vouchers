@@ -599,3 +599,53 @@ pub enum EscrowError {
     #[msg("Amount calculation overflowed")]
     AmountOverflow,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn gift_with_hash(gift_hash: [u8; 32]) -> Gift {
+        Gift {
+            gift_hash,
+            creator: Pubkey::new_unique(),
+            asset: Asset::Sol,
+            mint: Pubkey::default(),
+            amount: 1,
+            expires_at: 1,
+            created_at: 0,
+            status: GiftStatus::Active,
+            recipient: None,
+            bump: 1,
+            reserved: [0; 16],
+        }
+    }
+
+    #[test]
+    fn accepts_secret_matching_the_stored_hash() {
+        let secret = [7; 32];
+        let gift_hash = hash(&secret).to_bytes();
+        let gift = gift_with_hash(gift_hash);
+
+        assert!(validate_secret(&gift, &gift_hash, &secret).is_ok());
+    }
+
+    #[test]
+    fn rejects_wrong_secret_even_when_gift_hash_is_correct() {
+        let secret = [7; 32];
+        let wrong_secret = [8; 32];
+        let gift_hash = hash(&secret).to_bytes();
+        let gift = gift_with_hash(gift_hash);
+
+        assert!(validate_secret(&gift, &gift_hash, &wrong_secret).is_err());
+    }
+
+    #[test]
+    fn rejects_hash_that_does_not_match_the_gift_account() {
+        let secret = [7; 32];
+        let stored_hash = hash(&secret).to_bytes();
+        let supplied_hash = hash(&[9; 32]).to_bytes();
+        let gift = gift_with_hash(stored_hash);
+
+        assert!(validate_secret(&gift, &supplied_hash, &secret).is_err());
+    }
+}
