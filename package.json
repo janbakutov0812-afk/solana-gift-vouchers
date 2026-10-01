@@ -7,6 +7,7 @@
     "dev": "vite",
     "dev:setup": "node backend/setup-local.js",
     "dev:api": "node --env-file=.env.local backend/server.js",
+    "test": "node --test",
     "build": "vite build",
     "preview": "vite preview"
   },
