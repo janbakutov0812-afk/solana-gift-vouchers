@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="340" viewBox="0 0 1200 340" role="img" aria-labelledby="title desc">
+  <title id="title">Solgift — crypto gifts by link</title>
+  <desc id="desc">A Solana gift voucher preview with SOL and USDC tokens.</desc>
+  <rect width="1200" height="340" rx="20" fill="#111a24"/>
+  <path d="M0 273h1200v67H0z" fill="#17232d"/>
+  <circle cx="89" cy="91" r="34" fill="#13b981"/>
+  <path d="M73 81h32l-7 8H66zm0 13h32l-7 8H66zm0 13h32l-7 8H66z" fill="#07150f"/>
+  <text x="145" y="103" fill="#f5f8fa" font-family="Arial, sans-serif" font-size="52" font-weight="700">SOLGIFT</text>
+  <text x="68" y="169" fill="#d5e0e7" font-family="Arial, sans-serif" font-size="27">Crypto gifts, delivered by link.</text>
+  <rect x="68" y="203" width="250" height="38" rx="19" fill="#263640"/>
+  <text x="88" y="229" fill="#64e1b3" font-family="Arial, sans-serif" font-size="17" font-weight="700">SOL  ·  USDC  ·  DEVNET MVP</text>
+  <rect x="782" y="43" width="348" height="246" rx="15" fill="#f4f6f3"/>
+  <rect x="806" y="66" width="42" height="42" rx="12" fill="#c4f3e2"/>
+  <path d="M816 78h22l-5 5h-22zm0 8h22l-5 5h-22zm0 8h22l-5 5h-22z" fill="#087d59"/>
+  <text x="861" y="94" fill="#39534b" font-family="Arial, sans-serif" font-size="16" font-weight="700">A GIFT FOR YOU</text>
+  <text x="806" y="164" fill="#10231b" font-family="Arial, sans-serif" font-size="43" font-weight="700">25 USDC</text>
+  <text x="806" y="198" fill="#53645d" font-family="Arial, sans-serif" font-size="18">A little something, sent with care.</text>
+  <rect x="806" y="222" width="300" height="43" rx="8" fill="#087d59"/>
+  <text x="906" y="250" fill="#ffffff" font-family="Arial, sans-serif" font-size="16" font-weight="700">CLAIM GIFT</text>
+</svg>

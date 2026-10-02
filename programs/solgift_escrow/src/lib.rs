@@ -10,6 +10,9 @@ const USDC_DEVNET: Pubkey = pubkey!("4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncD
 const USDC_MAINNET: Pubkey = pubkey!("EPjFWdd5AufqSSqeM2q2xzybapC8G4wEGGkZwyTDt1v");
 const USDC_DECIMALS: u8 = 6;
 const MAX_LIFETIME_SECONDS: i64 = 365 * 24 * 60 * 60;
+const MIN_SOL_CLAIM_RESERVE: u64 = 20_000;
+const CLAIM_FEE_BUFFER: u64 = 20_000;
+const MAX_CLAIM_RESERVE: u64 = 10_000_000;
 
 #[program]
 pub mod solgift_escrow {
@@ -20,9 +23,16 @@ pub mod solgift_escrow {
         ctx: Context<CreateSolGift>,
         gift_hash: [u8; 32],
         amount_lamports: u64,
+        fee_reserve_lamports: u64,
         expires_at: i64,
     ) -> Result<()> {
-        validate_new_gift(&gift_hash, amount_lamports, expires_at)?;
+        validate_new_gift(
+            &gift_hash,
+            amount_lamports,
+            Asset::Sol,
+            fee_reserve_lamports,
+            expires_at,
+        )?;
         initialize_gift(
             &mut ctx.accounts.gift,
             ctx.accounts.creator.key(),
@@ -30,6 +40,7 @@ pub mod solgift_escrow {
             Asset::Sol,
             Pubkey::default(),
             amount_lamports,
+            fee_reserve_lamports,
             expires_at,
             ctx.bumps.gift,
         )?;
@@ -42,7 +53,9 @@ pub mod solgift_escrow {
                     to: ctx.accounts.gift.to_account_info(),
                 },
             ),
-            amount_lamports,
+            amount_lamports
+                .checked_add(fee_reserve_lamports)
+                .ok_or(EscrowError::AmountOverflow)?,
         )?;
 
         emit!(GiftCreated {
@@ -62,9 +75,16 @@ pub mod solgift_escrow {
         ctx: Context<CreateUsdcGift>,
         gift_hash: [u8; 32],
         amount: u64,
+        fee_reserve_lamports: u64,
         expires_at: i64,
     ) -> Result<()> {
-        validate_new_gift(&gift_hash, amount, expires_at)?;
+        validate_new_gift(
+            &gift_hash,
+            amount,
+            Asset::Usdc,
+            fee_reserve_lamports,
+            expires_at,
+        )?;
         validate_usdc_mint(&ctx.accounts.mint)?;
         initialize_gift(
             &mut ctx.accounts.gift,
@@ -73,6 +93,7 @@ pub mod solgift_escrow {
             Asset::Usdc,
             ctx.accounts.mint.key(),
             amount,
+            fee_reserve_lamports,
             expires_at,
             ctx.bumps.gift,
         )?;
@@ -89,6 +110,17 @@ pub mod solgift_escrow {
             ),
             amount,
             USDC_DECIMALS,
+        )?;
+
+        system_program::transfer(
+            CpiContext::new(
+                System::id(),
+                Transfer {
+                    from: ctx.accounts.creator.to_account_info(),
+                    to: ctx.accounts.gift.to_account_info(),
+                },
+            ),
+            fee_reserve_lamports,
         )?;
 
         emit!(GiftCreated {
@@ -108,16 +140,27 @@ pub mod solgift_escrow {
         ctx: Context<ClaimSolGift>,
         gift_hash: [u8; 32],
         gift_secret: [u8; 32],
+        fee_reimbursement_lamports: u64,
     ) -> Result<()> {
         let now = Clock::get()?.unix_timestamp;
         let gift = &mut ctx.accounts.gift;
         validate_secret(gift, &gift_hash, &gift_secret)?;
         validate_claim(gift, Asset::Sol, now)?;
+        let fee_reserve = gift.fee_reserve_lamports();
+        validate_fee_reimbursement(fee_reimbursement_lamports, fee_reserve)?;
         let amount = transfer_lamports_from_gift(
             gift,
             &ctx.accounts.recipient.to_account_info(),
             gift.amount,
+            fee_reserve,
         )?;
+        transfer_exact_lamports_from_gift(
+            gift,
+            &ctx.accounts.fee_sponsor.to_account_info(),
+            fee_reimbursement_lamports,
+        )?;
+        transfer_lamports_from_gift(gift, &ctx.accounts.creator.to_account_info(), 0, 0)?;
+        gift.set_fee_reserve_lamports(0);
         gift.recipient = Some(ctx.accounts.recipient.key());
         gift.status = GiftStatus::Claimed;
         emit!(GiftClaimed {
@@ -135,12 +178,15 @@ pub mod solgift_escrow {
         ctx: Context<ClaimUsdcGift>,
         gift_hash: [u8; 32],
         gift_secret: [u8; 32],
+        fee_reimbursement_lamports: u64,
     ) -> Result<()> {
         let now = Clock::get()?.unix_timestamp;
         let gift = &mut ctx.accounts.gift;
         validate_secret(gift, &gift_hash, &gift_secret)?;
         validate_claim(gift, Asset::Usdc, now)?;
         validate_usdc_mint(&ctx.accounts.mint)?;
+        let fee_reserve = gift.fee_reserve_lamports();
+        validate_fee_reimbursement(fee_reimbursement_lamports, fee_reserve)?;
         require!(
             ctx.accounts.vault.amount >= gift.amount,
             EscrowError::InsufficientEscrow
@@ -168,6 +214,13 @@ pub mod solgift_escrow {
             amount,
             USDC_DECIMALS,
         )?;
+        transfer_exact_lamports_from_gift(
+            gift,
+            &ctx.accounts.fee_sponsor.to_account_info(),
+            fee_reimbursement_lamports,
+        )?;
+        transfer_lamports_from_gift(gift, &ctx.accounts.creator.to_account_info(), 0, 0)?;
+        gift.set_fee_reserve_lamports(0);
         gift.recipient = Some(ctx.accounts.recipient.key());
         gift.status = GiftStatus::Claimed;
         emit!(GiftClaimed {
@@ -193,7 +246,9 @@ pub mod solgift_escrow {
             gift,
             &ctx.accounts.creator.to_account_info(),
             gift.amount,
+            0,
         )?;
+        gift.set_fee_reserve_lamports(0);
         gift.status = GiftStatus::Refunded;
         emit!(GiftRefunded {
             gift: gift.key(),
@@ -242,6 +297,13 @@ pub mod solgift_escrow {
             amount,
             USDC_DECIMALS,
         )?;
+        transfer_lamports_from_gift(
+            gift,
+            &ctx.accounts.creator.to_account_info(),
+            gift.fee_reserve_lamports(),
+            0,
+        )?;
+        gift.set_fee_reserve_lamports(0);
         gift.status = GiftStatus::Refunded;
         emit!(GiftRefunded {
             gift: gift.key(),
@@ -308,6 +370,7 @@ pub struct CreateUsdcGift<'info> {
 #[instruction(gift_hash: [u8; 32], gift_secret: [u8; 32])]
 pub struct ClaimSolGift<'info> {
     /// CHECK: Used only as a PDA seed and checked against gift.creator by has_one.
+    #[account(mut)]
     pub creator: UncheckedAccount<'info>,
     #[account(
         mut,
@@ -318,12 +381,16 @@ pub struct ClaimSolGift<'info> {
     pub gift: Account<'info, Gift>,
     #[account(mut)]
     pub recipient: Signer<'info>,
+    #[account(mut)]
+    pub fee_sponsor: Signer<'info>,
+    pub system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
 #[instruction(gift_hash: [u8; 32], gift_secret: [u8; 32])]
 pub struct ClaimUsdcGift<'info> {
     /// CHECK: Used only as a PDA seed and checked against gift.creator by has_one.
+    #[account(mut)]
     pub creator: UncheckedAccount<'info>,
     #[account(
         mut,
@@ -334,6 +401,8 @@ pub struct ClaimUsdcGift<'info> {
     pub gift: Account<'info, Gift>,
     #[account(mut)]
     pub recipient: Signer<'info>,
+    #[account(mut)]
+    pub fee_sponsor: Signer<'info>,
     #[account(address = gift.mint)]
     pub mint: Account<'info, Mint>,
     #[account(
@@ -346,7 +415,7 @@ pub struct ClaimUsdcGift<'info> {
     // Safe init_if_needed use: the account is the canonical ATA derived from this signer and mint.
     #[account(
         init_if_needed,
-        payer = recipient,
+        payer = fee_sponsor,
         associated_token::mint = mint,
         associated_token::authority = recipient,
         associated_token::token_program = token_program
@@ -425,6 +494,16 @@ pub struct Gift {
 }
 
 impl Gift {
+    fn fee_reserve_lamports(&self) -> u64 {
+        u64::from_le_bytes(self.reserved[..8].try_into().expect("fixed reserve width"))
+    }
+
+    fn set_fee_reserve_lamports(&mut self, amount: u64) {
+        self.reserved[..8].copy_from_slice(&amount.to_le_bytes());
+    }
+}
+
+impl Gift {
     pub const SPACE: usize = 8 + 32 + 32 + 1 + 32 + 8 + 8 + 8 + 1 + 1 + 32 + 1 + 16;
 }
 
@@ -477,6 +556,7 @@ fn initialize_gift(
     asset: Asset,
     mint: Pubkey,
     amount: u64,
+    fee_reserve_lamports: u64,
     expires_at: i64,
     bump: u8,
 ) -> Result<()> {
@@ -491,15 +571,30 @@ fn initialize_gift(
     gift.recipient = None;
     gift.bump = bump;
     gift.reserved = [0; 16];
+    gift.set_fee_reserve_lamports(fee_reserve_lamports);
     Ok(())
 }
 
-fn validate_new_gift(gift_hash: &[u8; 32], amount: u64, expires_at: i64) -> Result<()> {
+fn validate_new_gift(
+    gift_hash: &[u8; 32],
+    amount: u64,
+    asset: Asset,
+    fee_reserve_lamports: u64,
+    expires_at: i64,
+) -> Result<()> {
     require!(
         gift_hash.iter().any(|byte| *byte != 0),
         EscrowError::InvalidGiftSecret
     );
     require!(amount > 0, EscrowError::InvalidAmount);
+    let minimum_reserve = match asset {
+        Asset::Sol => MIN_SOL_CLAIM_RESERVE,
+        Asset::Usdc => Rent::get()?
+            .minimum_balance(TokenAccount::LEN)
+            .checked_add(CLAIM_FEE_BUFFER)
+            .ok_or(EscrowError::AmountOverflow)?,
+    };
+    validate_claim_reserve(fee_reserve_lamports, minimum_reserve)?;
     let now = Clock::get()?.unix_timestamp;
     let lifetime = expires_at
         .checked_sub(now)
@@ -507,6 +602,18 @@ fn validate_new_gift(gift_hash: &[u8; 32], amount: u64, expires_at: i64) -> Resu
     require!(
         lifetime > 0 && lifetime <= MAX_LIFETIME_SECONDS,
         EscrowError::InvalidExpiry
+    );
+    Ok(())
+}
+
+fn validate_claim_reserve(fee_reserve_lamports: u64, minimum_reserve: u64) -> Result<()> {
+    require!(
+        fee_reserve_lamports >= minimum_reserve,
+        EscrowError::InsufficientClaimReserve
+    );
+    require!(
+        fee_reserve_lamports <= MAX_CLAIM_RESERVE,
+        EscrowError::ClaimReserveTooLarge
     );
     Ok(())
 }
@@ -553,6 +660,7 @@ fn transfer_lamports_from_gift(
     gift: &Account<Gift>,
     destination: &AccountInfo,
     minimum_amount: u64,
+    retain_lamports: u64,
 ) -> Result<u64> {
     let gift_info = gift.to_account_info();
     let gift_balance = gift_info.lamports();
@@ -560,9 +668,15 @@ fn transfer_lamports_from_gift(
     let spendable = gift_balance
         .checked_sub(rent_floor)
         .ok_or(EscrowError::InsufficientEscrow)?;
-    require!(spendable >= minimum_amount, EscrowError::InsufficientEscrow);
-    // Include unsolicited SOL in the final payout so it cannot be stranded in the PDA.
-    let amount = spendable;
+    require!(
+        spendable
+            >= minimum_amount
+                .checked_add(retain_lamports)
+                .ok_or(EscrowError::AmountOverflow)?,
+        EscrowError::InsufficientEscrow
+    );
+    // Keep the sender-funded claim reserve in the PDA until claim or refund settles it.
+    let amount = spendable - retain_lamports;
     let destination_balance = destination.lamports();
     let new_destination_balance = destination_balance
         .checked_add(amount)
@@ -574,6 +688,36 @@ fn transfer_lamports_from_gift(
     **gift_info.try_borrow_mut_lamports()? = new_gift_balance;
     **destination.try_borrow_mut_lamports()? = new_destination_balance;
     Ok(amount)
+}
+
+fn transfer_exact_lamports_from_gift(
+    gift: &Account<Gift>,
+    destination: &AccountInfo,
+    amount: u64,
+) -> Result<()> {
+    if amount == 0 {
+        return Ok(());
+    }
+    let gift_info = gift.to_account_info();
+    let rent_floor = Rent::get()?.minimum_balance(gift_info.data_len());
+    require!(
+        gift_info.lamports().saturating_sub(rent_floor) >= amount,
+        EscrowError::InsufficientClaimReserve
+    );
+    let destination_balance = destination.lamports();
+    **gift_info.try_borrow_mut_lamports()? -= amount;
+    **destination.try_borrow_mut_lamports()? = destination_balance
+        .checked_add(amount)
+        .ok_or(EscrowError::AmountOverflow)?;
+    Ok(())
+}
+
+fn validate_fee_reimbursement(reimbursement: u64, reserve: u64) -> Result<()> {
+    require!(
+        reimbursement <= reserve,
+        EscrowError::InsufficientClaimReserve
+    );
+    Ok(())
 }
 
 #[error_code]
@@ -598,6 +742,10 @@ pub enum EscrowError {
     InsufficientEscrow,
     #[msg("Amount calculation overflowed")]
     AmountOverflow,
+    #[msg("Claim fee reserve is too small to sponsor this gift")]
+    InsufficientClaimReserve,
+    #[msg("Claim fee reserve exceeds the allowed maximum")]
+    ClaimReserveTooLarge,
 }
 
 #[cfg(test)]
@@ -647,5 +795,20 @@ mod tests {
         let gift = gift_with_hash(stored_hash);
 
         assert!(validate_secret(&gift, &supplied_hash, &secret).is_err());
+    }
+
+    #[test]
+    fn fee_reserve_is_stored_in_existing_reserved_bytes() {
+        let mut gift = gift_with_hash([1; 32]);
+        gift.set_fee_reserve_lamports(2_500_000);
+        assert_eq!(gift.fee_reserve_lamports(), 2_500_000);
+        assert_eq!(gift.reserved.len(), 16);
+    }
+
+    #[test]
+    fn rejects_reserve_below_minimum_and_above_cap() {
+        assert!(validate_claim_reserve(99, 100).is_err());
+        assert!(validate_claim_reserve(MAX_CLAIM_RESERVE + 1, 100).is_err());
+        assert!(validate_claim_reserve(100, 100).is_ok());
     }
 }

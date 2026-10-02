@@ -9,7 +9,7 @@ import {
   createTransferCheckedInstruction, getAssociatedTokenAddress,
 } from '@solana/spl-token'
 import { createSecretWordVerifier, verifySecretWord } from '../../lib/secret-word.js'
-import { CREATE_SOL_DISCRIMINATOR, CREATE_USDC_DISCRIMINATOR, decodeGiftAccount, giftAddress, SOLGIFT_PROGRAM_ID } from '../../lib/onchain-gift.js'
+import { buildSponsoredClaimTransaction, CREATE_SOL_DISCRIMINATOR, CREATE_USDC_DISCRIMINATOR, decodeGiftAccount, giftAddress, SOLGIFT_PROGRAM_ID } from '../../lib/onchain-gift.js'
 
 const templates = new Set(['birthday', 'coffee', 'thanks', 'study'])
 const network = process.env.ESCROW_NETWORK || 'devnet'
@@ -56,7 +56,8 @@ async function ensureSchema() {
       claim_raw_transaction text,
       claim_blockhash text,
       claim_last_valid_block_height bigint,
-      claimed_at timestamptz
+      claimed_at timestamptz,
+      fee_reserve_lamports bigint NOT NULL DEFAULT 0
     )`
     await sql()`CREATE INDEX IF NOT EXISTS escrow_vouchers_status_created_idx
       ON escrow_vouchers (status, created_at)`
@@ -66,6 +67,7 @@ async function ensureSchema() {
     await sql()`ALTER TABLE escrow_vouchers ADD COLUMN IF NOT EXISTS secret_attempt_window timestamptz NOT NULL DEFAULT now()`
     await sql()`ALTER TABLE escrow_vouchers ADD COLUMN IF NOT EXISTS onchain boolean NOT NULL DEFAULT false`
     await sql()`ALTER TABLE escrow_vouchers ADD COLUMN IF NOT EXISTS gift_hash text`
+    await sql()`ALTER TABLE escrow_vouchers ADD COLUMN IF NOT EXISTS fee_reserve_lamports bigint NOT NULL DEFAULT 0`
   })().catch((error) => { schemaReady = undefined; throw error })
   return schemaReady
 }
@@ -171,15 +173,29 @@ async function prepare(body) {
     ? giftAddress(voucher.senderAddress, giftHash).toBase58()
     : Keypair.fromSecretKey(escrowSecret).publicKey.toBase58()
   const voucherId = `escrow_${randomBytes(18).toString('base64url')}`
+  let feeReserveLamports = 0
+  if (onchain) {
+    const feeSponsor = feePayerKeypair()
+    const quote = await buildSponsoredClaimTransaction({
+      connection: solana(), feeSponsor, creator: voucher.senderAddress,
+      giftAddress: escrowAddress, giftHash, giftSecret: escrowSecret,
+      currency: voucher.currency, recipient: Keypair.generate().publicKey,
+    })
+    const fee = await solana().getFeeForMessage(quote.transaction.compileMessage(), 'confirmed')
+    if (fee.value === null) throw new Error('Unable to quote the sponsored claim fee')
+    const rent = voucher.currency === 'USDC' ? await solana().getMinimumBalanceForRentExemption(165, 'confirmed') : 0
+    feeReserveLamports = fee.value + rent + 20_000
+  }
   await sql()`DELETE FROM escrow_vouchers WHERE status = 'prepared' AND created_at < now() - interval '2 hours'`
   await sql()`INSERT INTO escrow_vouchers
     (voucher_id, sender_address, amount, currency, template_id, message, escrow_address, escrow_secret,
-      secret_word_salt, secret_word_hash, status, onchain, gift_hash)
+      secret_word_salt, secret_word_hash, status, onchain, gift_hash, fee_reserve_lamports)
     VALUES (${voucherId}, ${voucher.senderAddress}, ${voucher.amount}, ${voucher.currency}, ${voucher.templateId},
       ${voucher.message}, ${escrowAddress}, ${encryptSecret(escrowSecret)},
-      ${secretWord.salt}, ${secretWord.verifier}, 'prepared', ${onchain}, ${giftHash ? giftHash.toString('base64url') : null})`
+      ${secretWord.salt}, ${secretWord.verifier}, 'prepared', ${onchain}, ${giftHash ? giftHash.toString('base64url') : null}, ${feeReserveLamports})`
   const expiresAt = Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60
-  return { escrowAddress, voucherId, giftHash: giftHash?.toString('base64url'), expiresAt, onchain }
+  return { escrowAddress, voucherId, giftHash: giftHash?.toString('base64url'), expiresAt, onchain,
+    feeReserveLamports: feeReserveLamports.toString() }
 }
 
 async function verifyOnchainFunding(voucher, txHash) {
@@ -192,18 +208,22 @@ async function verifyOnchainFunding(voucher, txHash) {
   if (!signer) throw new Error('Transaction was not signed by senderAddress')
   const expectedDiscriminator = voucher.currency === 'SOL' ? CREATE_SOL_DISCRIMINATOR : CREATE_USDC_DISCRIMINATOR
   const expectedAmount = amountUnits(voucher.amount, voucher.currency)
+  const expectedFeeReserve = BigInt(voucher.fee_reserve_lamports || 0)
   const instruction = tx.transaction.message.instructions.find((item) => item.programId?.equals(SOLGIFT_PROGRAM_ID)
     && item.accounts?.some((account) => account.equals(new PublicKey(expectedGift))))
   if (!instruction) throw new Error('Transaction does not contain the Solgift program instruction')
   const data = Buffer.from(bs58.decode(instruction.data))
+  const transactionFeeReserve = data.length >= 64 ? data.readBigUInt64LE(48) : 0n
   if (!data.subarray(0, 8).equals(expectedDiscriminator)
       || !data.subarray(8, 40).equals(giftHash)
-      || data.readBigUInt64LE(40) !== expectedAmount) {
+      || data.readBigUInt64LE(40) !== expectedAmount
+      || transactionFeeReserve !== expectedFeeReserve) {
     throw new Error('Solgift instruction does not match the prepared gift')
   }
   const gift = decodeGiftAccount(await solana().getAccountInfo(new PublicKey(expectedGift), 'confirmed'))
   if (!gift.giftHash.equals(giftHash) || gift.creator.toBase58() !== voucher.sender_address
-      || gift.asset !== voucher.currency || gift.amount !== expectedAmount || gift.status !== 'active') {
+      || gift.asset !== voucher.currency || gift.amount !== expectedAmount
+      || gift.feeReserveLamports !== expectedFeeReserve || gift.status !== 'active') {
     throw new Error('On-chain gift account does not match the prepared voucher')
   }
 }
@@ -261,11 +281,11 @@ async function create(body) {
   }
   const fields = validateVoucher(body)
   const candidates = body.voucherId
-    ? await sql()`SELECT voucher_id, sender_address, amount, currency, template_id, message, escrow_address, onchain, gift_hash, secret_word_salt, secret_word_hash
+    ? await sql()`SELECT voucher_id, sender_address, amount, currency, template_id, message, escrow_address, onchain, gift_hash, fee_reserve_lamports, secret_word_salt, secret_word_hash
         FROM escrow_vouchers WHERE voucher_id = ${body.voucherId} AND status = 'prepared'
           AND sender_address = ${fields.senderAddress} AND currency = ${fields.currency}
           AND template_id = ${fields.templateId} AND amount = ${fields.amount} AND message = ${fields.message} LIMIT 1`
-    : await sql()`SELECT voucher_id, sender_address, amount, currency, template_id, message, escrow_address, onchain, gift_hash, secret_word_salt, secret_word_hash
+    : await sql()`SELECT voucher_id, sender_address, amount, currency, template_id, message, escrow_address, onchain, gift_hash, fee_reserve_lamports, secret_word_salt, secret_word_hash
         FROM escrow_vouchers WHERE status = 'prepared' AND sender_address = ${fields.senderAddress}
           AND currency = ${fields.currency} AND template_id = ${fields.templateId}
           AND amount = ${fields.amount} AND message = ${fields.message}
@@ -309,7 +329,7 @@ async function registerOnchainGift(body, { requireSecretPhrase }) {
   const data = Buffer.from(bs58.decode(instruction.data))
   const isCreateInstruction = data.subarray(0, 8).equals(CREATE_SOL_DISCRIMINATOR)
     || data.subarray(0, 8).equals(CREATE_USDC_DISCRIMINATOR)
-  if (!isCreateInstruction || data.length < 48) throw new Error('Transaction is not a valid gift creation')
+  if (!isCreateInstruction || data.length < 56) throw new Error('Transaction is not a valid gift creation')
   const giftHash = data.subarray(8, 40)
   const escrowAddress = giftAddress(sender, giftHash)
   if (!instruction.accounts?.some((account) => account.equals(escrowAddress))) {
@@ -317,11 +337,11 @@ async function registerOnchainGift(body, { requireSecretPhrase }) {
   }
   const candidates = body.voucherId
     ? await sql()`SELECT voucher_id, sender_address, amount, currency, template_id, message,
-        escrow_address, onchain, gift_hash, secret_word_salt, secret_word_hash
+        escrow_address, onchain, gift_hash, fee_reserve_lamports, secret_word_salt, secret_word_hash
       FROM escrow_vouchers WHERE voucher_id = ${body.voucherId} AND status = 'prepared' AND onchain = true
         AND sender_address = ${sender} AND escrow_address = ${escrowAddress.toBase58()} LIMIT 1`
     : await sql()`SELECT voucher_id, sender_address, amount, currency, template_id, message,
-        escrow_address, onchain, gift_hash, secret_word_salt, secret_word_hash
+        escrow_address, onchain, gift_hash, fee_reserve_lamports, secret_word_salt, secret_word_hash
       FROM escrow_vouchers WHERE status = 'prepared' AND onchain = true
         AND sender_address = ${sender} AND escrow_address = ${escrowAddress.toBase58()} LIMIT 1`
   const voucher = candidates[0]
@@ -496,7 +516,36 @@ async function claim(body) {
   if (voucher.onchain) {
     const gift = decodeGiftAccount(await solana().getAccountInfo(new PublicKey(voucher.escrow_address), 'confirmed'))
     if (gift.status !== 'active' || gift.expiresAt <= Math.floor(Date.now() / 1000)) throw new Error('Voucher is no longer claimable')
-    return { onchain: true, giftSecret: decryptSecret(voucher.escrow_secret).toString('base64url') }
+    const giftHash = Buffer.from(voucher.gift_hash, 'base64url')
+    const giftSecret = decryptSecret(voucher.escrow_secret)
+    const feeSponsor = feePayerKeypair()
+    const preparedClaim = await buildSponsoredClaimTransaction({
+      connection: solana(), feeSponsor, creator: voucher.sender_address,
+      giftAddress: voucher.escrow_address, giftHash, giftSecret, currency: voucher.currency, recipient,
+    })
+    const feeQuote = await solana().getFeeForMessage(preparedClaim.transaction.compileMessage(), 'confirmed')
+    if (feeQuote.value === null) throw new Error('Unable to quote the sponsored claim fee')
+    let accountRent = 0
+    if (voucher.currency === 'USDC') {
+      const recipientAta = await getAssociatedTokenAddress(mints[network], recipient)
+      if (!await solana().getAccountInfo(recipientAta, 'confirmed')) {
+        accountRent = await solana().getMinimumBalanceForRentExemption(165, 'confirmed')
+      }
+    }
+    const reserve = gift.feeReserveLamports
+    const actualReimbursement = BigInt(feeQuote.value + accountRent)
+    if (reserve > 0n && actualReimbursement > reserve) throw new Error('Sender-funded fee reserve is insufficient; ask the sender to recreate this voucher')
+    const reimbursement = reserve > 0n ? actualReimbursement : 0n
+    const { transaction, blockhash, lastValidBlockHeight } = await buildSponsoredClaimTransaction({
+      connection: solana(), feeSponsor, creator: voucher.sender_address,
+      giftAddress: voucher.escrow_address, giftHash, giftSecret, currency: voucher.currency,
+      recipient, feeReimbursementLamports: reimbursement,
+    })
+    return {
+      onchain: true,
+      sponsoredTransaction: transaction.serialize({ requireAllSignatures: false, verifySignatures: true }).toString('base64'),
+      feeSponsorAddress: feeSponsor.publicKey.toBase58(), blockhash, lastValidBlockHeight,
+    }
   }
   if (voucher.status === 'claimed') {
     if (voucher.recipient_address !== recipient) throw new Error('Voucher has already been claimed')

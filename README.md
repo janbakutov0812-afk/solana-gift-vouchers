@@ -1,63 +1,75 @@
-# Solgift — crypto gifts in one link
+<div align="center">
+  <img src="docs/assets/solgift-readme-banner.svg" alt="Solgift — crypto gifts by link" width="100%" />
 
-> Create a digital greeting card with SOL or USDC and send it to someone you care about with a single link.
+  <p><strong>Send SOL or USDC as a gift. The recipient claims it from a link.</strong></p>
 
-**Status:** MVP frontend with a local devnet escrow API. Do not use the local custodial server with real funds or mainnet.
+  <p>
+    <a href="https://solana-gift-vouchers-nine.vercel.app/"><strong>Live Demo</strong></a>
+    · <a href="BACKEND_API.md">API Notes</a>
+    · <a href="programs/solgift_escrow/README.md">Escrow Program</a>
+  </p>
 
-[Escrow API contract](./BACKEND_API.md) · [GitHub repository](https://github.com/janbakutov0812-afk/solana-gift-vouchers)
+  <p>
+    <img alt="React 19" src="https://img.shields.io/badge/React-19-149eca?logo=react&logoColor=white">
+    <img alt="Vite 6" src="https://img.shields.io/badge/Vite-6-646cff?logo=vite&logoColor=white">
+    <img alt="Solana Devnet" src="https://img.shields.io/badge/Solana-Devnet-14a87b?logo=solana&logoColor=white">
+    <img alt="Prototype" src="https://img.shields.io/badge/status-prototype-f0b429">
+  </p>
+</div>
 
----
+> [!WARNING]
+> **Devnet prototype only.** Do not use real funds or mainnet. The public demo may not include the sponsored-claim work in this repository. The on-chain program and matching frontend/API release must be deployed and verified together before that flow is tested.
 
-## Problem and solution
+## Problem & Solution
 
-Sending cryptocurrency to someone who is new to Web3 can mean explaining wallet addresses, wallets, and transaction steps. Solgift turns a transfer into a familiar gift experience: a designed greeting card, a personal message, and a link for the recipient.
+Sending crypto to someone new to Web3 can mean asking for a wallet address, checking the network, and explaining token accounts. Those steps add friction and create room for mistakes.
 
-The sender chooses a design, SOL or USDC, an amount, and a secret phrase. The recipient opens the link, connects a wallet, enters the phrase shared separately, and claims the gift. The escrow backend verifies the phrase and prevents a voucher from being claimed more than once.
+**Solgift** makes the transfer feel like a gift: the sender chooses SOL or USDC, adds a message and design, then shares a claim link. The recipient opens it and claims through a compatible Solana wallet.
 
 ## Why Solana
 
-- The app supports gifts denominated in SOL or USDC on Solana.
-- Wallet connections use Solana Wallet Adapter, and transactions are confirmed through RPC.
-- The gift is designed to be shared as a link, so the sender does not need to collect the recipient's wallet address in advance.
+- SOL and USDC gifts fit in one Solana-focused experience.
+- Wallet Adapter supports familiar wallets such as Phantom and Solflare.
+- The project explores sponsored claims, with the sender funding the claim fee and USDC account rent so a recipient can start without SOL. This is a development target, not a confirmed live feature.
 
-## MVP features
+## Product Highlights
 
-- Phantom wallet connection and SOL balance display.
-- SOL or USDC selection, amount entry, a personal message, and four greeting card designs.
-- Gift preview and recipient screen.
-- Funding transaction preparation through the API, wallet signing, and on-chain confirmation.
-- Voucher lookup by link ID and a claim request through the API.
-- Separate secret phrase required at creation and claim; the API stores a salted scrypt verifier and limits claim attempts.
+- Shareable gift links with a personal message and card design
+- SOL and USDC gift flows on Devnet
+- Wallet connection with Phantom and Solflare
+- Local API for development and escrow operations
+- Claim phrase verification uses scrypt; share claim details privately
 
-Voucher creation and claims require the local escrow API to be running. The development API uses temporary custodial signers and devnet only.
+## Revenue Model
+
+The proposed model is a **5% fee paid by the sender**. For illustration, a $10 gift would have a $0.50 fee. This is a proposal, not a statement that the public demo currently charges this fee.
 
 ## Architecture
 
-```text
-Sender ── creates voucher ──▶ Frontend ── prepare/fund ──▶ Escrow backend
-                                  │                              │
-                                  └── signs transfer ──▶ Solana RPC
-
-Recipient ── opens link ──▶ Frontend ── reads voucher ──▶ Escrow backend
-      └── connects wallet ◀── payout after claim ◀─────────────┘
+```mermaid
+flowchart LR
+    S[Sender] --> W[Solgift web app]
+    W -->|Connect and sign| A[Phantom or Solflare]
+    A -->|Devnet transaction| C[Solana Devnet]
+    W <-->|Voucher operations| API[Escrow API]
+    R[Recipient] --> W
+    R -->|Connect and claim| A
+    P[Anchor escrow program<br/>development] -. coordinated release required .-> C
 ```
 
-The frontend does not store the escrow private key. See [BACKEND_API.md](./BACKEND_API.md) for API behavior and security requirements.
+The local file-backed API is for Devnet development only. The Anchor program and sponsored claim path require a matching, verified deployment before use. See the [API notes](BACKEND_API.md) and [program documentation](programs/solgift_escrow/README.md).
 
-The secret phrase must not be included in the link. Share it with the recipient through a separate channel. This phrase protection is implemented in the existing escrow API; the Anchor program remains disconnected from the site and still needs an authorized claim flow before deployment.
+## Tech Stack
 
-An initial on-chain Anchor escrow is being developed in [`programs/solgift_escrow`](./programs/solgift_escrow/README.md). The current website still calls the Vercel escrow API; it does not yet use this program. The on-chain implementation is a dev-stage prototype and must not receive valuable funds before dedicated tests, a devnet acceptance flow, a verified build, frontend integration, and independent review.
-
-## Tech stack
-
-| Layer | Technologies |
+| Layer | Technology |
 | --- | --- |
-| Interface | React 19, Vite 6, CSS, Tailwind CSS configuration |
-| Wallet and transactions | Solana Wallet Adapter, `@solana/web3.js`, `@solana/spl-token` |
-| Animation and icons | Framer Motion, Lucide |
-| Escrow | Local devnet API in `backend/server.js`; not suitable for production |
+| Frontend | React 19, Vite 6, Tailwind CSS |
+| Wallets | Solana Wallet Adapter, Phantom, Solflare |
+| Chain | Solana Devnet, Anchor program in development |
+| API | Vercel serverless routes; local Devnet-only development server |
+| Tests | Node.js test runner, Vite production build, Rust/Anchor tests |
 
-## Quick start
+## Quick Start
 
 Requirements: Node.js 18+ and npm.
 
@@ -65,40 +77,43 @@ Requirements: Node.js 18+ and npm.
 git clone https://github.com/janbakutov0812-afk/solana-gift-vouchers.git
 cd solana-gift-vouchers
 npm ci
-npm run dev:setup # creates ignored .env.local and local devnet signing keys (once)
-npm run dev:api   # terminal 1: local Escrow API
-npm run dev       # terminal 2: Vite frontend
+npm run dev:setup
 ```
 
-The default network is Solana devnet. `.env.local` points the frontend to `http://localhost:8787` and is excluded from Git.
+`dev:setup` creates an ignored `.env.local` and local Devnet signing keys. Keep those keys private. Start the API and frontend in separate terminals:
 
-| Variable | Purpose | Default example |
-| --- | --- | --- |
-| `VITE_SOLANA_NETWORK` | Network label and USDC mint selection | `devnet` |
-| `VITE_SOLANA_RPC_URL` | RPC endpoint | `https://api.devnet.solana.com` |
-| `VITE_VOUCHER_API_URL` | Escrow API base URL | `http://localhost:8787` in `.env.local` |
+```bash
+npm run dev:api
+```
 
-Keep `VITE_SOLANA_NETWORK` and `VITE_SOLANA_RPC_URL` in sync. The included API refuses to run on mainnet; it is a local development server, not a production custody system.
+```bash
+npm run dev
+```
 
-To create a production build, run `npm run build`. The output is written to `dist/`.
+Vite prints the local URL, usually `http://localhost:5173`. The development API listens on port `8787` and refuses mainnet. For hosted API configuration, see [BACKEND_API.md](BACKEND_API.md). Never put signing secrets in `VITE_*` variables.
 
 ## Roadmap
 
-These are proposed next steps:
+- **Now:** Devnet MVP and escrow-program development
+- **Next:** End-to-end sponsored-claim testing with the matching program and API
+- **Then:** Independent security review and a small pilot
 
-- Replace the local custodial development API with a reviewed on-chain escrow program or hardened production backend.
-- Add voucher persistence, expiration, and atomic protection against duplicate claims.
-- Exercise error and retry scenarios for SOL and USDC on devnet.
-- Prepare a secure production process before considering mainnet.
+## Verify
+
+```bash
+npm test
+npm run build
+cargo test --manifest-path programs/solgift_escrow/Cargo.toml
+```
 
 ## Security
 
-- Never put private keys, seed phrases, or other secrets in the frontend, `VITE_*` environment variables, or GitHub.
-- The local backend stores voucher signing keys encrypted in an ignored development data file; protect and delete that file if no longer needed.
-- Do not use the local escrow server with mainnet or valuable assets.
-
----
+- Never share wallet seed phrases or private keys with this app or anyone else.
+- Never expose backend signing keys in frontend code, browser storage, URLs, or `VITE_*` variables.
+- Do not use the local file-backed server with real funds or mainnet.
+- The program and sponsored-claim path have not been independently audited. Verify deployments, source, and transaction behavior before production use.
+- Report security issues privately to the repository owner; do not publish exploit details in an issue.
 
 ## License
 
-No license has been added to this repository yet.
+No license file has been added to this repository yet.

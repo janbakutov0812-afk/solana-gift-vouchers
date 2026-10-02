@@ -38,11 +38,11 @@ function timestampBuffer(value) {
   return result
 }
 
-export async function createGiftInstruction({ creator, giftAddress, giftHash, currency, amount, expiresAt }) {
+export async function createGiftInstruction({ creator, giftAddress, giftHash, currency, amount, feeReserveLamports, expiresAt }) {
   const creatorKey = new PublicKey(creator)
   const hashBytes = Buffer.from(giftHash)
   const gift = giftPda(creatorKey, hashBytes)
-  if (!gift.equals(new PublicKey(giftAddress))) throw new Error('Эскроу-адрес не совпадает с адресом программы')
+  if (!gift.equals(new PublicKey(giftAddress))) throw new Error('The escrow address does not match the program address.')
 
   if (currency === 'SOL') {
     return new TransactionInstruction({
@@ -52,7 +52,7 @@ export async function createGiftInstruction({ creator, giftAddress, giftHash, cu
         { pubkey: gift, isSigner: false, isWritable: true },
         { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
       ],
-      data: Buffer.concat([CREATE_SOL, hashBytes, amountBuffer(amount), timestampBuffer(expiresAt)]),
+      data: Buffer.concat([CREATE_SOL, hashBytes, amountBuffer(amount), amountBuffer(feeReserveLamports), timestampBuffer(expiresAt)]),
     })
   }
 
@@ -70,23 +70,25 @@ export async function createGiftInstruction({ creator, giftAddress, giftHash, cu
       { pubkey: ASSOCIATED_TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
       { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
     ],
-    data: Buffer.concat([CREATE_USDC, hashBytes, amountBuffer(amount), timestampBuffer(expiresAt)]),
+    data: Buffer.concat([CREATE_USDC, hashBytes, amountBuffer(amount), amountBuffer(feeReserveLamports), timestampBuffer(expiresAt)]),
   })
 }
 
-export async function claimGiftInstruction({ creator, giftAddress, giftHash, giftSecret, currency, recipient }) {
+export async function claimGiftInstruction({ creator, giftAddress, giftHash, giftSecret, currency, recipient, feeSponsor, feeReimbursementLamports = 0n }) {
   const creatorKey = new PublicKey(creator)
   const recipientKey = new PublicKey(recipient)
+  const feeSponsorKey = new PublicKey(feeSponsor)
   const gift = new PublicKey(giftAddress)
   const hashBytes = Buffer.from(giftHash)
   const secretBytes = Buffer.from(giftSecret)
-  if (hashBytes.length !== 32 || secretBytes.length !== 32) throw new Error('Некорректный секрет ваучера')
-  if (!giftPda(creatorKey, hashBytes).equals(gift)) throw new Error('Адрес ваучера не совпадает с адресом программы')
+  if (hashBytes.length !== 32 || secretBytes.length !== 32) throw new Error('Invalid gift secret.')
+  if (!giftPda(creatorKey, hashBytes).equals(gift)) throw new Error('The gift address does not match the program address.')
 
   const keys = [
-    { pubkey: creatorKey, isSigner: false, isWritable: false },
+    { pubkey: creatorKey, isSigner: false, isWritable: true },
     { pubkey: gift, isSigner: false, isWritable: true },
     { pubkey: recipientKey, isSigner: true, isWritable: true },
+    { pubkey: feeSponsorKey, isSigner: true, isWritable: true },
   ]
   let discriminator = CLAIM_SOL
   if (currency === 'USDC') {
@@ -101,10 +103,12 @@ export async function claimGiftInstruction({ creator, giftAddress, giftHash, gif
       { pubkey: ASSOCIATED_TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
       { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
     )
+  } else {
+    keys.push({ pubkey: SystemProgram.programId, isSigner: false, isWritable: false })
   }
   return new TransactionInstruction({
     programId: SOLGIFT_PROGRAM_ID,
     keys,
-    data: Buffer.concat([discriminator, hashBytes, secretBytes]),
+    data: Buffer.concat([discriminator, hashBytes, secretBytes, amountBuffer(feeReimbursementLamports)]),
   })
 }

@@ -12,7 +12,7 @@ import {
   createTransferCheckedInstruction, getAssociatedTokenAddress,
 } from '@solana/spl-token'
 import { createSecretWordVerifier, verifySecretWord } from '../lib/secret-word.js'
-import { CREATE_SOL_DISCRIMINATOR, CREATE_USDC_DISCRIMINATOR, decodeGiftAccount, giftAddress, SOLGIFT_PROGRAM_ID } from '../lib/onchain-gift.js'
+import { buildSponsoredClaimTransaction, CREATE_SOL_DISCRIMINATOR, CREATE_USDC_DISCRIMINATOR, decodeGiftAccount, giftAddress, SOLGIFT_PROGRAM_ID } from '../lib/onchain-gift.js'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const databasePath = process.env.ESCROW_DB_PATH || path.join(here, 'data', 'vouchers.json')
@@ -118,18 +118,32 @@ async function prepare(body) {
     ? giftAddress(sender, giftHash).toBase58()
     : Keypair.fromSecretKey(escrowSecret).publicKey.toBase58()
   const voucherId = `escrow_${randomBytes(18).toString('base64url')}`
+  let feeReserveLamports = 0
+  if (onchain) {
+    const quote = await buildSponsoredClaimTransaction({
+      connection, feeSponsor: feePayer, creator: sender,
+      giftAddress: escrowAddress, giftHash, giftSecret: escrowSecret,
+      currency: body.currency, recipient: Keypair.generate().publicKey,
+    })
+    const fee = await connection.getFeeForMessage(quote.transaction.compileMessage(), 'confirmed')
+    if (fee.value === null) throw new Error('Unable to quote the sponsored claim fee')
+    const rent = body.currency === 'USDC' ? await connection.getMinimumBalanceForRentExemption(165, 'confirmed') : 0
+    feeReserveLamports = fee.value + rent + 20_000
+  }
   database.vouchers.push({
     voucherId, senderAddress: sender.toBase58(), amount, currency: body.currency,
     templateId: body.templateId, message: body.message, escrowAddress,
     escrowSecret: encryptSecret(escrowSecret), status: 'prepared', onchain,
     giftHash: giftHash?.toString('base64url'),
+    feeReserveLamports,
     secretWordSalt: secretWord.salt, secretWordHash: secretWord.verifier,
     secretWordAttempts: 0, secretWordAttemptWindow: Date.now(),
     createdAt: new Date().toISOString(),
   })
   await persist()
   const expiresAt = Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60
-  return { escrowAddress, voucherId, giftHash: giftHash?.toString('base64url'), expiresAt, onchain }
+  return { escrowAddress, voucherId, giftHash: giftHash?.toString('base64url'), expiresAt, onchain,
+    feeReserveLamports: feeReserveLamports.toString() }
 }
 
 async function verifyOnchainFunding(voucher, txHash) {
@@ -142,18 +156,22 @@ async function verifyOnchainFunding(voucher, txHash) {
   if (!signer) throw new Error('Transaction was not signed by senderAddress')
   const expectedDiscriminator = voucher.currency === 'SOL' ? CREATE_SOL_DISCRIMINATOR : CREATE_USDC_DISCRIMINATOR
   const expectedAmount = amountUnits(voucher.amount, voucher.currency)
+  const expectedFeeReserve = BigInt(voucher.feeReserveLamports || 0)
   const instruction = tx.transaction.message.instructions.find((item) => item.programId?.equals(SOLGIFT_PROGRAM_ID)
     && item.accounts?.some((account) => account.equals(expectedGift)))
   if (!instruction) throw new Error('Transaction does not contain the Solgift program instruction')
   const data = bs58.decode(instruction.data)
+  const transactionFeeReserve = data.length >= 64 ? data.readBigUInt64LE(48) : 0n
   if (!data.subarray(0, 8).equals(expectedDiscriminator)
       || !data.subarray(8, 40).equals(giftHash)
-      || data.readBigUInt64LE(40) !== expectedAmount) {
+      || data.readBigUInt64LE(40) !== expectedAmount
+      || transactionFeeReserve !== expectedFeeReserve) {
     throw new Error('Solgift instruction does not match the prepared gift')
   }
   const gift = decodeGiftAccount(await connection.getAccountInfo(expectedGift, 'confirmed'))
   if (!gift.giftHash.equals(giftHash) || gift.creator.toBase58() !== voucher.senderAddress
-      || gift.asset !== voucher.currency || gift.amount !== expectedAmount || gift.status !== 'active') {
+      || gift.asset !== voucher.currency || gift.amount !== expectedAmount
+      || gift.feeReserveLamports !== expectedFeeReserve || gift.status !== 'active') {
     throw new Error('On-chain gift account does not match the prepared voucher')
   }
 }
@@ -321,7 +339,36 @@ async function claim(body) {
   if (voucher.onchain) {
     const gift = decodeGiftAccount(await connection.getAccountInfo(new PublicKey(voucher.escrowAddress), 'confirmed'))
     if (gift.status !== 'active' || gift.expiresAt <= Math.floor(Date.now() / 1000)) throw new Error('Voucher is no longer claimable')
-    return { onchain: true, giftSecret: decryptSecret(voucher.escrowSecret).toString('base64url') }
+    const giftHash = Buffer.from(voucher.giftHash, 'base64url')
+    const giftSecret = decryptSecret(voucher.escrowSecret)
+    const preparedClaim = await buildSponsoredClaimTransaction({
+      connection, feeSponsor: feePayer, creator: voucher.senderAddress,
+      giftAddress: voucher.escrowAddress, giftHash,
+      giftSecret, currency: voucher.currency, recipient: address(body.recipientAddress, 'recipient'),
+    })
+    const feeQuote = await connection.getFeeForMessage(preparedClaim.transaction.compileMessage(), 'confirmed')
+    if (feeQuote.value === null) throw new Error('Unable to quote the sponsored claim fee')
+    let accountRent = 0
+    if (voucher.currency === 'USDC') {
+      const recipientAta = await getAssociatedTokenAddress(mints[network], address(body.recipientAddress, 'recipient'))
+      if (!await connection.getAccountInfo(recipientAta, 'confirmed')) {
+        accountRent = await connection.getMinimumBalanceForRentExemption(165, 'confirmed')
+      }
+    }
+    const reserve = BigInt(voucher.feeReserveLamports || 0)
+    const actualReimbursement = BigInt(feeQuote.value + accountRent)
+    if (reserve > 0n && actualReimbursement > reserve) throw new Error('Sender-funded fee reserve is insufficient; ask the sender to recreate this voucher')
+    const reimbursement = reserve > 0n ? actualReimbursement : 0n
+    const { transaction, blockhash, lastValidBlockHeight } = await buildSponsoredClaimTransaction({
+      connection, feeSponsor: feePayer, creator: voucher.senderAddress,
+      giftAddress: voucher.escrowAddress, giftHash, giftSecret, currency: voucher.currency,
+      recipient: address(body.recipientAddress, 'recipient'), feeReimbursementLamports: reimbursement,
+    })
+    return {
+      onchain: true,
+      sponsoredTransaction: transaction.serialize({ requireAllSignatures: false, verifySignatures: true }).toString('base64'),
+      feeSponsorAddress: feePayer.publicKey.toBase58(), blockhash, lastValidBlockHeight,
+    }
   }
   const recipient = address(body.recipientAddress, 'recipient').toBase58()
   if (activeClaims.has(voucher.voucherId)) throw new Error('Voucher claim is already in progress')

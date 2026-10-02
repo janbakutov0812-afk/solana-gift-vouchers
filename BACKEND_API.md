@@ -2,7 +2,7 @@
 
 The frontend expects `VITE_VOUCHER_API_URL` to be the API origin, for example `https://api.example.com`. It never receives an escrow private key. Set the frontend and backend to the same Solana cluster.
 
-The repository's `backend/server.js` is a **local devnet prototype only**. It creates per-voucher custodial keypairs and stores their encrypted secret keys in an ignored local JSON file; this is not production custody, and it must not be pointed at mainnet or used for valuable funds. Its fee-payer key must have devnet SOL for claim transaction fees and USDC recipient token-account rent.
+The repository's `backend/server.js` is a **local devnet prototype only**. It creates per-voucher secrets and stores them encrypted in an ignored local JSON file; this is not production custody, and it must not be pointed at mainnet or used for valuable funds. Its fee-sponsor key must have Devnet SOL to relay claims; new on-chain vouchers reserve the quoted transaction fee plus USDC token-account rent from the sender.
 
 ## Create and fund a voucher
 
@@ -23,11 +23,14 @@ Request:
 }
 ```
 
-Response:
+Response for an on-chain voucher (`onchain: true`):
 
 ```json
 {
-  "escrowAddress": "base58 public key"
+  "escrowAddress": "base58 public key",
+  "voucherId": "escrow_abc123xyz",
+  "giftHash": "base64url hash",
+  "feeReserveLamports": "quoted sender-funded SOL reserve"
 }
 ```
 
@@ -77,22 +80,28 @@ Request:
 }
 ```
 
-Response:
+Response for the on-chain claim flow:
 
 ```json
-{ "txHash": "confirmed or submitted Solana transaction signature" }
+{
+  "onchain": true,
+  "sponsoredTransaction": "base64 transaction, fee sponsor signature included",
+  "feeSponsorAddress": "base58 public key",
+  "blockhash": "recent blockhash",
+  "lastValidBlockHeight": 123
+}
 ```
 
-The backend must validate the secret word before atomically reserving each eligible voucher, validate the recipient address, submit the payout, and make retries idempotent. Limit claim attempts per voucher using persistent storage (the current routes allow eight attempts, including valid retries, per voucher per 15 minutes). The frontend waits for the returned transaction to confirm before displaying “Успешно выплачено”.
+The API verifies the separate secret phrase and prepares a transaction partially signed by the fee sponsor. The recipient still signs to authorize the payout, but does not pay the network fee. For USDC, the sponsor creates the recipient ATA if missing. The contract reimburses the sponsor from the sender-funded reserve and returns unused reserve to the sender. Non-on-chain legacy vouchers continue to return a payout `txHash`.
 
 ## Security and operations
 
 - A link containing only a voucher ID is not sufficient to claim in the updated API: the recipient must also supply the separate secret phrase. Share the phrase through a different channel; anyone who gets both can claim.
-- The current API protects the existing custodial MVP. The Anchor program is not connected to the site and does not yet enforce this passphrase or a server-authorized claim permit; do not deploy it for real funds until that claim flow is implemented and reviewed.
+- The separate passphrase is checked by the API, outside the Anchor program. Anyone who gets the voucher secret and phrase can claim; do not use valuable funds until this trust boundary and relayer flow have been independently reviewed.
 - Keep signing keys in a secrets manager or use a reviewed on-chain program. Never put private keys in the frontend, browser storage, URLs, or `VITE_*` variables.
 - Verify chain, token mint, amount, sender and destination from transaction data; do not trust client-submitted metadata.
 - Apply replay protection, idempotency, rate limits, and origin/authentication controls.
-- USDC requires a destination associated token account. Decide which party or sponsor funds its rent-exempt balance and transaction fees.
+- New on-chain gifts reserve SOL for a relayed claim. The sender funds the reserve at creation; the claim sponsor covers the transaction fee and any missing USDC ATA rent, and the contract reimburses the quoted cost.
 - SOL and USDC vouchers need explicit expiry/refund behavior and a disclosed fee policy. A USDC transfer cannot pay a SOL-denominated fee directly.
 - Do not use mainnet until custody, signing, recovery and payout flows have been reviewed.
 
@@ -108,7 +117,7 @@ Set these server-only Vercel variables before using the API:
 - `ESCROW_MASTER_KEY` — 32 random bytes encoded as 64 hex characters
 - `ESCROW_FEE_PAYER_SECRET_KEY` — base58-encoded 64-byte Solana keypair secret (JSON byte arrays are also accepted for compatibility)
 
-Never prefix these secrets with `VITE_`. The public frontend API base defaults to the current site origin, so Vercel serves `/api/escrow/*` on the same HTTPS domain. The fee payer needs devnet SOL before claim transactions can succeed. The local `backend/server.js` remains a devnet-only file-backed development server and must not be used as the Vercel runtime.
+Never prefix these secrets with `VITE_`. The public frontend API base defaults to the current site origin, so Vercel serves `/api/escrow/*` on the same HTTPS domain. The fee sponsor needs Devnet SOL before claims can succeed. The program upgrade and matching frontend/API release must be deployed together; the new instruction data is not compatible with the currently deployed program version. The local `backend/server.js` remains a devnet-only file-backed development server and must not be used as the Vercel runtime.
 
 `GET /api/escrow/health` returns the fee payer's public address, configured network, and current SOL balance. It never returns the fee payer secret key.
 
