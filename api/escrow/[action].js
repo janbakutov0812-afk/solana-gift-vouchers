@@ -10,6 +10,7 @@ import {
 } from '@solana/spl-token'
 import { createSecretWordVerifier, verifySecretWord } from '../../lib/secret-word.js'
 import { buildSponsoredClaimTransaction, CREATE_SOL_DISCRIMINATOR, CREATE_USDC_DISCRIMINATOR, decodeGiftAccount, giftAddress, SOLGIFT_PROGRAM_ID } from '../../lib/onchain-gift.js'
+import { SOLGIFT_PROGRAM_ABI } from '../../shared/solgift-program-config.js'
 
 const templates = new Set(['birthday', 'coffee', 'thanks', 'study'])
 const network = process.env.ESCROW_NETWORK || 'devnet'
@@ -174,7 +175,7 @@ async function prepare(body) {
     : Keypair.fromSecretKey(escrowSecret).publicKey.toBase58()
   const voucherId = `escrow_${randomBytes(18).toString('base64url')}`
   let feeReserveLamports = 0
-  if (onchain) {
+  if (onchain && SOLGIFT_PROGRAM_ABI === 'fee-reserve') {
     const feeSponsor = feePayerKeypair()
     const quote = await buildSponsoredClaimTransaction({
       connection: solana(), feeSponsor, creator: voucher.senderAddress,
@@ -195,6 +196,7 @@ async function prepare(body) {
       ${secretWord.salt}, ${secretWord.verifier}, 'prepared', ${onchain}, ${giftHash ? giftHash.toString('base64url') : null}, ${feeReserveLamports})`
   const expiresAt = Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60
   return { escrowAddress, voucherId, giftHash: giftHash?.toString('base64url'), expiresAt, onchain,
+    programAbiVersion: SOLGIFT_PROGRAM_ABI,
     feeReserveLamports: feeReserveLamports.toString() }
 }
 
@@ -213,8 +215,10 @@ async function verifyOnchainFunding(voucher, txHash) {
     && item.accounts?.some((account) => account.equals(new PublicKey(expectedGift))))
   if (!instruction) throw new Error('Transaction does not contain the Solgift program instruction')
   const data = Buffer.from(bs58.decode(instruction.data))
-  const transactionFeeReserve = data.length >= 64 ? data.readBigUInt64LE(48) : 0n
-  if (!data.subarray(0, 8).equals(expectedDiscriminator)
+  const expectedDataLength = SOLGIFT_PROGRAM_ABI === 'fee-reserve' ? 64 : 56
+  const transactionFeeReserve = SOLGIFT_PROGRAM_ABI === 'fee-reserve' && data.length === 64 ? data.readBigUInt64LE(48) : 0n
+  if (data.length !== expectedDataLength
+      || !data.subarray(0, 8).equals(expectedDiscriminator)
       || !data.subarray(8, 40).equals(giftHash)
       || data.readBigUInt64LE(40) !== expectedAmount
       || transactionFeeReserve !== expectedFeeReserve) {

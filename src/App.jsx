@@ -1,15 +1,21 @@
+Warning: truncated output (original token count: 15538)
+Total output lines: 1046
+
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { AnimatePresence, motion, useMotionValue, useSpring, useTransform } from 'framer-motion'
 import { useConnection, useWallet } from '@solana/wallet-adapter-react'
 import { useWalletModal } from '@solana/wallet-adapter-react-ui'
 import { LAMPORTS_PER_SOL, PublicKey, Transaction } from '@solana/web3.js'
 import { createGiftInstruction, decodeBase64Url, SOLGIFT_PROGRAM_ID, USDC_DEVNET_MINT } from './solgift-program.js'
+import { SOLGIFT_PROGRAM_ABI } from '../shared/solgift-program-config.js'
 import {
   ArrowDown, ArrowRight, ArrowUpRight, Check, ChevronDown, Copy, Gift,
   LockKeyhole, Menu, ShieldCheck, Sparkles, Wallet, X, Zap,
 } from 'lucide-react'
 
-const VOUCHER_API = import.meta.env.VITE_VOUCHER_API_URL || (import.meta.env.PROD ? window.location.origin : '')
+const VOUCHER_API = import.meta.env.PROD
+  ? window.location.origin
+  : import.meta.env.VITE_VOUCHER_API_URL || ''
 
 async function voucherApi(path, body) {
   if (!VOUCHER_API) throw new Error('Voucher service is not configured. Please try again later.')
@@ -570,40 +576,7 @@ function CreatePage({ voucher, setVoucher, onGenerated, onToast }) {
       return
     }
     if ((import.meta.env.VITE_SOLANA_NETWORK || 'devnet') !== 'devnet') {
-      onToast({ type: 'error', message: 'The gift program currently works on Devnet only' })
-      return
-    }
-    if ([...secretWord.trim()].length < 12 || secretWord !== secretWordConfirm) {
-      onToast({ type: 'error', message: secretWord !== secretWordConfirm ? 'Secret phrases do not match' : 'Choose a secret phrase at least 12 characters long' })
-      return
-    }
-    setIsApiLoading(true)
-    let signature
-    try {
-      onToast({ type: 'sent', message: 'Preparing your gift…' })
-      const preparation = await voucherApi('/api/escrow/prepare', {
-        senderAddress: publicKey.toBase58(), currency: voucher.currency,
-        amount: Number(voucher.amount), templateId: voucher.template.id, message: voucher.message,
-        secretWord, onchain: true,
-      })
-      if (!preparation.escrowAddress || !preparation.giftHash || !preparation.voucherId) {
-        throw new Error('The API did not prepare the on-chain gift. No funds were sent.')
-      }
-      const transaction = new Transaction()
-      const decimals = voucher.currency === 'SOL' ? 9 : 6
-      const amount = BigInt(Math.round(Number(voucher.amount) * 10 ** decimals))
-      if (amount <= 0n) throw new Error('Enter a valid gift amount')
-      transaction.add(await createGiftInstruction({
-        creator: publicKey, giftAddress: preparation.escrowAddress,
-        giftHash: decodeBase64Url(preparation.giftHash), currency: voucher.currency,
-        amount, feeReserveLamports: BigInt(preparation.feeReserveLamports || '0'), expiresAt: preparation.expiresAt,
-      }))
-      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed')
-      transaction.feePayer = publicKey
-      transaction.recentBlockhash = blockhash
-      const simulation = await connection.simulateTransaction(transaction)
-      if (simulation.value.err) {
-        console.error('Voucher funding simulation failed', simulation.value.err, simulation.value.logs)
+      onToast({ type: 'error', message: 'The gift program current…538 tokens truncated…lation failed', simulation.value.err, simulation.value.logs)
         const details = simulation.value.logs?.slice(-3).join(' ')
         throw new Error(`Transaction preflight failed. No funds were sent.${details ? ` ${details}` : ''}`)
       }

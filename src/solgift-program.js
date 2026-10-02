@@ -2,6 +2,7 @@ import {
   ASSOCIATED_TOKEN_PROGRAM_ID, TOKEN_PROGRAM_ID, getAssociatedTokenAddress,
 } from '@solana/spl-token'
 import { PublicKey, SystemProgram, TransactionInstruction } from '@solana/web3.js'
+import { SOLGIFT_PROGRAM_ABI } from '../shared/solgift-program-config.js'
 
 export const SOLGIFT_PROGRAM_ID = new PublicKey('A5cFtpUVnBncPqaBpUjHUtb9brk3qoPZSUjRdD3DTht2')
 export const USDC_DEVNET_MINT = new PublicKey('4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU')
@@ -38,9 +39,13 @@ function timestampBuffer(value) {
   return result
 }
 
-export async function createGiftInstruction({ creator, giftAddress, giftHash, currency, amount, feeReserveLamports, expiresAt }) {
+export async function createGiftInstruction({ creator, giftAddress, giftHash, currency, amount, feeReserveLamports, expiresAt, programAbiVersion = SOLGIFT_PROGRAM_ABI }) {
+  if (programAbiVersion !== SOLGIFT_PROGRAM_ABI) throw new Error('The site and escrow API use different program versions.')
   const creatorKey = new PublicKey(creator)
   const hashBytes = Buffer.from(giftHash)
+  const createArgs = [CREATE_SOL, hashBytes, amountBuffer(amount)]
+  if (programAbiVersion === 'fee-reserve') createArgs.push(amountBuffer(feeReserveLamports))
+  createArgs.push(timestampBuffer(expiresAt))
   const gift = giftPda(creatorKey, hashBytes)
   if (!gift.equals(new PublicKey(giftAddress))) throw new Error('The escrow address does not match the program address.')
 
@@ -52,7 +57,7 @@ export async function createGiftInstruction({ creator, giftAddress, giftHash, cu
         { pubkey: gift, isSigner: false, isWritable: true },
         { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
       ],
-      data: Buffer.concat([CREATE_SOL, hashBytes, amountBuffer(amount), amountBuffer(feeReserveLamports), timestampBuffer(expiresAt)]),
+      data: Buffer.concat(createArgs),
     })
   }
 
@@ -70,14 +75,14 @@ export async function createGiftInstruction({ creator, giftAddress, giftHash, cu
       { pubkey: ASSOCIATED_TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
       { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
     ],
-    data: Buffer.concat([CREATE_USDC, hashBytes, amountBuffer(amount), amountBuffer(feeReserveLamports), timestampBuffer(expiresAt)]),
+    data: Buffer.concat([CREATE_USDC, ...createArgs.slice(1)]),
   })
 }
 
 export async function claimGiftInstruction({ creator, giftAddress, giftHash, giftSecret, currency, recipient, feeSponsor, feeReimbursementLamports = 0n }) {
   const creatorKey = new PublicKey(creator)
   const recipientKey = new PublicKey(recipient)
-  const feeSponsorKey = new PublicKey(feeSponsor)
+  const feeSponsorKey = feeSponsor ? new PublicKey(feeSponsor) : null
   const gift = new PublicKey(giftAddress)
   const hashBytes = Buffer.from(giftHash)
   const secretBytes = Buffer.from(giftSecret)
@@ -88,8 +93,11 @@ export async function claimGiftInstruction({ creator, giftAddress, giftHash, gif
     { pubkey: creatorKey, isSigner: false, isWritable: true },
     { pubkey: gift, isSigner: false, isWritable: true },
     { pubkey: recipientKey, isSigner: true, isWritable: true },
-    { pubkey: feeSponsorKey, isSigner: true, isWritable: true },
   ]
+  if (SOLGIFT_PROGRAM_ABI === 'fee-reserve') {
+    if (!feeSponsorKey) throw new Error('A fee sponsor is required by the deployed escrow program.')
+    keys.push({ pubkey: feeSponsorKey, isSigner: true, isWritable: true })
+  }
   let discriminator = CLAIM_SOL
   if (currency === 'USDC') {
     const vault = await getAssociatedTokenAddress(USDC_DEVNET_MINT, gift, true)
@@ -109,6 +117,9 @@ export async function claimGiftInstruction({ creator, giftAddress, giftHash, gif
   return new TransactionInstruction({
     programId: SOLGIFT_PROGRAM_ID,
     keys,
-    data: Buffer.concat([discriminator, hashBytes, secretBytes, amountBuffer(feeReimbursementLamports)]),
+    data: Buffer.concat([
+      discriminator, hashBytes, secretBytes,
+      ...(SOLGIFT_PROGRAM_ABI === 'fee-reserve' ? [amountBuffer(feeReimbursementLamports)] : []),
+    ]),
   })
 }
