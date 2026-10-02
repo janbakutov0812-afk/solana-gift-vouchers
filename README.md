@@ -1,20 +1,25 @@
 <div align="center">
-  <img src="docs/assets/solgift-readme-banner.svg" alt="Solgift — crypto gifts by link" width="100%" />
+  <h1>Solgift — Crypto Gifts on Solana</h1>
 
-  <p><strong>Send SOL or USDC as a gift. The recipient claims it from a link.</strong></p>
+  <p><strong>Send SOL or USDC as a gift. The recipient claims it from a shareable link.</strong></p>
 
   <p>
-    <a href="https://solana-gift-vouchers-nine.vercel.app/"><strong>Live Demo</strong></a>
+    <a href="https://solana-gift-vouchers-janbakutov0812-3514.vercel.app/"><strong>Live Demo</strong></a>
     · <a href="BACKEND_API.md">API Notes</a>
     · <a href="programs/solgift_escrow/README.md">Escrow Program</a>
   </p>
 
   <p>
+    <a href="https://solana-gift-vouchers-janbakutov0812-3514.vercel.app/"><img alt="Live demo" src="https://img.shields.io/badge/Live%20Demo-Open-14a87b?logo=vercel&logoColor=white"></a>
+    <a href="https://github.com/janbakutov0812-afk/solana-gift-vouchers/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/janbakutov0812-afk/solana-gift-vouchers?style=flat-square"></a>
+    <a href="https://github.com/janbakutov0812-afk/solana-gift-vouchers/network/members"><img alt="GitHub forks" src="https://img.shields.io/github/forks/janbakutov0812-afk/solana-gift-vouchers?style=flat-square"></a>
     <img alt="React 19" src="https://img.shields.io/badge/React-19-149eca?logo=react&logoColor=white">
     <img alt="Vite 6" src="https://img.shields.io/badge/Vite-6-646cff?logo=vite&logoColor=white">
     <img alt="Solana Devnet" src="https://img.shields.io/badge/Solana-Devnet-14a87b?logo=solana&logoColor=white">
     <img alt="Prototype" src="https://img.shields.io/badge/status-prototype-f0b429">
   </p>
+
+  <img src="docs/assets/solgift-readme-banner.svg" alt="Solgift — crypto gifts by link" width="100%" />
 </div>
 
 > [!WARNING]
