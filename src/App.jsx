@@ -230,10 +230,11 @@ function WalletConnection({ onToast }) {
     if (connected) { setOpen((value) => !value); return }
     try {
       setBusy(true)
-      if (wallet) await connect()
-      else setVisible(true)
+      // Open the wallet picker on every device instead of silently choosing
+      // an injected wallet. On mobile, users can select a supported wallet.
+      setVisible(true)
     } catch (error) {
-      onToast({ type: 'error', message: error?.name === 'WalletSignMessageError' ? 'Wallet connection was rejected' : 'Could not connect wallet' })
+      onToast({ type: 'error', message: error?.name === 'WalletSignMessageError' ? 'Wallet connection was rejected' : 'Could not open wallet picker' })
     } finally { setBusy(false) }
   }
 
